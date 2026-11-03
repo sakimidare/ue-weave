@@ -1,0 +1,15 @@
+[package]
+name = "ue-recover"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+encoding_rs = "0.8"
+clap = { version = "4", features = ["derive"] }
+html-escape = "0.2"
+reqwest = { version = "0.12", features = ["blocking", "rustls-tls"] }
+scraper = "0.22"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+url = "2"
