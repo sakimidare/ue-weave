@@ -165,6 +165,13 @@ pub(crate) fn image_run(element: ElementRef, context: &RunContext) -> Option<Run
 }
 
 pub(crate) fn visit_node(element: ElementRef, context: &RunContext, output: &mut Vec<Run>) {
+    if let Some((href, title)) = crate::attachment::embedded_pdf(element) {
+        let mut run =
+            text_run(&title, &context.for_element(element)).expect("PDF title is nonempty");
+        run.link = Some(rules::absolute_url(context.base_url.as_ref(), &href));
+        output.push(run);
+        return;
+    }
     if element.value().name() == "br" {
         let mut run = text_run("\n", context).expect("newline is nonempty");
         run.line_break = true;

@@ -1,6 +1,89 @@
 use std::{fs, process::Command};
 
 #[test]
+fn site_config_overrides_defaults_and_validates_input() {
+    let dir = std::env::temp_dir().join(format!("ue-site-config-{}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    let config = dir.join("sites.json");
+    let html = dir.join("page.html");
+    fs::write(&html, "<h1>站点标题</h1><h2>默认标题</h2><time>2026-11-03</time><b class='writer'>作者：张三</b><article><p>自定义正文</p></article><main><p>手动正文</p></main>").unwrap();
+    fs::write(
+        &config,
+        r#"{"content":"article","title":"h1","date":"time","author":".writer"}"#,
+    )
+    .unwrap();
+    let run = |extra: &[&str]| {
+        Command::new(env!("CARGO_BIN_EXE_ue-recover"))
+            .arg("--input")
+            .arg(&html)
+            .arg("--site-config")
+            .arg(&config)
+            .arg("--output")
+            .arg(dir.join("out"))
+            .arg("--json")
+            .args(extra)
+            .output()
+            .unwrap()
+    };
+    let result = run(&[]);
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let ir: serde_json::Value =
+        serde_json::from_slice(&fs::read(dir.join("out/reconstructed.json")).unwrap()).unwrap();
+    assert_eq!(ir["metadata"]["title"], "站点标题");
+    assert_eq!(ir["metadata"]["date"], "2026-11-03");
+    assert_eq!(ir["metadata"]["author"], "张三");
+    assert_eq!(ir["blocks"][0]["text"], "自定义正文");
+    let result = run(&["--selector", "main"]);
+    assert!(result.status.success());
+    let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(report["selector"], "main");
+    let result = run(&[
+        "--selector",
+        "content=main",
+        "--selector",
+        "title=h2",
+        "--selector",
+        "date=.missing",
+    ]);
+    assert!(result.status.success());
+    let ir: serde_json::Value =
+        serde_json::from_slice(&fs::read(dir.join("out/reconstructed.json")).unwrap()).unwrap();
+    assert_eq!(ir["metadata"]["title"], "默认标题");
+    assert_eq!(ir["metadata"]["author"], "张三");
+    assert!(!ir["metadata"].as_object().unwrap().contains_key("date"));
+    assert_eq!(ir["blocks"][0]["text"], "手动正文");
+    fs::write(&config, r#"{"content":"main","title":"h2"}"#).unwrap();
+    let result = run(&[]);
+    assert!(result.status.success());
+    let ir: serde_json::Value =
+        serde_json::from_slice(&fs::read(dir.join("out/reconstructed.json")).unwrap()).unwrap();
+    assert_eq!(ir["metadata"]["title"], "默认标题");
+    assert!(!run(&["--site", "missing.example"]).status.success());
+
+    for invalid in [
+        "{broken",
+        r#"{"titel":"h1"}"#,
+        r#"{"content":"["}"#,
+        r#"{"sites":{"https://college.example":{"title":"h1"}}}"#,
+    ] {
+        fs::write(&config, invalid).unwrap();
+        let result = run(&[]);
+        assert!(!result.status.success());
+        let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+        assert_eq!(report["code"], "invalid_config");
+        assert!(report["error"].as_str().unwrap().contains("sites.json"));
+    }
+    fs::remove_file(&config).unwrap();
+    let report: serde_json::Value = serde_json::from_slice(&run(&[]).stdout).unwrap();
+    assert_eq!(report["code"], "read_config");
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn webplus_auto_selection_and_snapshot() {
     let dir = std::env::temp_dir().join(format!("ue-webplus-{}", std::process::id()));
     let output = Command::new(env!("CARGO_BIN_EXE_ue-recover"))

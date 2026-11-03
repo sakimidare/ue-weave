@@ -4,13 +4,24 @@ use scraper::{ElementRef, Html, Node};
 fn visible_text(root: ElementRef) -> String {
     let mut text = String::new();
     for node in root.descendants() {
+        if node.ancestors().filter_map(ElementRef::wrap).any(|parent| {
+            matches!(
+                parent.value().name(),
+                "script" | "style" | "iframe" | "object" | "embed"
+            )
+        }) {
+            continue;
+        }
+        if let Some(element) = ElementRef::wrap(node) {
+            if let Some((_, title)) = crate::attachment::embedded_pdf(element) {
+                text.push_str(&title);
+            }
+        }
         if let Node::Text(value) = node.value() {
-            let excluded = node.ancestors().filter_map(ElementRef::wrap).any(|parent| {
-                matches!(
-                    parent.value().name(),
-                    "script" | "style" | "iframe" | "object" | "embed"
-                )
-            });
+            let excluded = node
+                .ancestors()
+                .filter_map(ElementRef::wrap)
+                .any(|parent| crate::attachment::embedded_pdf(parent).is_some());
             if !excluded {
                 text.push_str(value);
             }
@@ -27,7 +38,7 @@ pub fn check(root: ElementRef, ir: &mut crate::model::Ir) {
     let output = Html::parse_fragment(&crate::renderer::render(ir));
     let reconstructed = visible_text(output.root_element());
     let matches = original == reconstructed;
-    let evidence = serde_json::json!({"value":if matches {"matched"} else {"mismatch"},"confidence":"high","reason":"对比静态正文与重建 HTML 的非空白文字顺序；忽略已排除的可执行节点及已知异常字符串。空白和结构另行记录，此检查不证明视觉布局一致","source_nodes":["n0"],"original_characters":original.chars().count(),"reconstructed_characters":reconstructed.chars().count()});
+    let evidence = serde_json::json!({"value":if matches {"matched"} else {"mismatch"},"confidence":"high","reason":"对比正文文字、PDF 占位元素的附件标题与重建 HTML 的非空白文字顺序；跳过可执行节点及已知异常字符串，空白和结构另行记录","source_nodes":["n0"],"original_characters":original.chars().count(),"reconstructed_characters":reconstructed.chars().count()});
     ir.metadata
         .insert("content_integrity".into(), evidence.clone());
     if !matches {

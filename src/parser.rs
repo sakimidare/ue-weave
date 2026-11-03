@@ -12,6 +12,14 @@ fn collect_assets(
     ir: &mut Ir,
     snapshot: &crate::snapshot::Snapshot,
 ) {
+    for element in root.select(&Selector::parse(".wp_pdf_player[pdfsrc]").unwrap()) {
+        if let Some((href, title)) = crate::attachment::embedded_pdf(element) {
+            let absolute = rules::absolute_url(base_url.as_ref(), &href);
+            let node = snapshot.element_id(element);
+            ir.attachments.push(serde_json::json!({"href":absolute,"text":title,"confidence":"high","reason":"WebPlus PDF 占位元素的 pdfsrc 属性","source_nodes":[node]}));
+            ir.warnings.push(serde_json::json!({"kind":"embedded-pdf","original":href,"value":absolute,"removed":false,"inferred":false,"confidence":"high","ir_field":"attachments, blocks.runs.link","reason":"PDF 阅读器占位元素转换为附件链接","source_nodes":[node]}));
+        }
+    }
     for image in root
         .descendants()
         .filter_map(ElementRef::wrap)

@@ -1,0 +1,8 @@
+{
+  "content": ".wp_articlecontent",
+  "title": "h1.arti_title",
+  "date": ".arti_update",
+  "source": ".arti_source",
+  "author": ".arti_author",
+  "publisher": ".arti_publisher"
+}

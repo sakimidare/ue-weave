@@ -1,0 +1,7 @@
+{
+  "content": ".Article_Content",
+  "title": ".Article_Title",
+  "date": ".Article_PublishDate",
+  "source": ".Article_Source",
+  "author": ".Article_Author"
+}

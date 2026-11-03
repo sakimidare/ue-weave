@@ -1,6 +1,44 @@
 use scraper::{ElementRef, Selector};
 use serde_json::{json, Value};
 
+pub fn embedded_pdf(element: ElementRef) -> Option<(String, String)> {
+    if element.value().name() != "span" {
+        return None;
+    }
+    if !element
+        .value()
+        .classes()
+        .any(|class| class == "wp_pdf_player")
+    {
+        return None;
+    }
+    let href = element.value().attr("pdfsrc")?;
+    if !crate::safety::safe_url(href, false) {
+        return None;
+    }
+    let text = crate::rules::text(element);
+    let title = if !text.trim().is_empty() {
+        text
+    } else {
+        element
+            .value()
+            .attr("sudyfile-attr")
+            .and_then(parse_metadata)
+            .and_then(|value| value["title"].as_str().map(str::to_string))
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| "PDF 附件".into())
+    };
+    let title = crate::rules::clean_sentinel(&title);
+    Some((
+        href.into(),
+        if title.trim().is_empty() {
+            "PDF 附件".into()
+        } else {
+            title
+        },
+    ))
+}
+
 pub fn identify(link: ElementRef, href: &str) -> Option<Value> {
     let path = url::Url::parse(href)
         .or_else(|_| {
@@ -101,6 +139,27 @@ fn parse_metadata(raw: &str) -> Option<Value> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn embedded_pdf_keeps_links_and_rejects_unsafe_sources() {
+        let doc = scraper::Html::parse_document("<div class='Article_Content'><p><span class='wp_pdf_player' pdfsrc='/file.pdf' sudyfile-attr=\"{'title':'undefinedundefined'}\"></span></p><p><span class='wp_pdf_player' pdfsrc='javascript:alert(1)'>保留说明</span></p></div>");
+        let ir = crate::parser::parse(
+            &doc,
+            ".Article_Content",
+            false,
+            Some("https://example.org/article".into()),
+        )
+        .unwrap();
+        assert_eq!(ir.attachments.len(), 1);
+        assert_eq!(ir.blocks[0].runs[0].text, "PDF 附件");
+        assert_eq!(
+            ir.blocks[0].runs[0].link.as_deref(),
+            Some("https://example.org/file.pdf")
+        );
+        assert_eq!(ir.metadata["content_integrity"]["value"], "matched");
+        let html = crate::renderer::render(&ir);
+        assert!(html.contains("保留说明"));
+        assert!(!html.contains("javascript:"));
+    }
     #[test]
     fn attributes_identify_extensionless_downloads_without_query_false_positives() {
         let document = scraper::Html::parse_document("<div class='Article_Content'><p><a href='/search?q=a.pdf'>检索</a><a href='/a.pdf.html'>网页</a><a href='/a.PDF?token=1'>文件</a><a href='/download?id=3' sudyfile-attr=\"{'title':'附件.doc'}\" title='附件.doc'>附件</a><a href='/get?id=4' download='x.docx'>下载</a></p></div>");

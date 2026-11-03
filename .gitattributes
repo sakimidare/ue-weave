@@ -1,0 +1,2 @@
+# Captured HTML retains source whitespace for parser regression tests.
+fixtures/*.html -whitespace

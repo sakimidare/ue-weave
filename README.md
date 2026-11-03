@@ -129,13 +129,57 @@ ue-recover --input page.html --output output/ \
 | `--input <FILE>` | 读取本地 HTML |
 | `--input-ir <FILE>` | 从已有 JSON IR 重新导出 |
 | `--output <DIR>`、`-o <DIR>` | 指定输出目录 |
-| `--selector <CSS>` | 指定正文选择器 |
+| `--selector <[FIELD=]CSS>` | 覆盖选择器，可重复；省略字段时指定正文 |
+| `--site-config <FILE>` | 加载站点选择器 JSON 配置 |
+| `--retries <N>` | 临时网络故障重试次数，默认 2，范围 0–5 |
+| `--timeout <SECONDS>` | 单次请求总超时，默认 30 秒，范围 1–120 |
 | `--download-images` | 下载正文图片 |
 | `--download-attachments` | 下载附件并替换为本地链接 |
 | `--keep-raw` | 额外保存完整解码页面 |
 | `--no-inference` | 关闭启发式推断 |
 | `--json` | 以 JSON 输出运行结果摘要 |
 | `--verbose` | 输出详细阶段日志 |
+
+## 站点选择器配置
+
+配置文件直接定义正文、标题、日期、来源、作者和发布者的 CSS 选择器，同一份配置适用于相同模板的网页和本地 HTML。项目提供 [configs/webplus.json](configs/webplus.json) 和 [configs/article.json](configs/article.json) 两份模板。
+
+```json
+{
+  "content": ".article-body",
+  "title": "h1.article-title",
+  "date": ".publish-date",
+  "source": ".article-source",
+  "author": ".article-author",
+  "publisher": ".publisher"
+}
+```
+
+```sh
+ue-recover 'https://cse.seu.edu.cn/2026/1102/c22535a588376/page.htm' \
+  --site-config configs/webplus.json --output output/cse
+
+ue-recover --input fixtures/cse-588376.html \
+  --site-config configs/webplus.json \
+  --output output/local
+```
+
+各字段逐项覆盖，优先级为：命令行 `--selector` > 配置文件 > 内置模板规则。`content: "auto"` 使用自动正文识别。
+
+`--selector` 支持 `content`、`title`、`date`、`source`、`author`、`publisher` 六个字段，可以重复传入。同一字段最后一次设置生效：
+
+```sh
+ue-recover --input page.html --output output/ \
+  --site-config configs/webplus.json \
+  --selector 'content=.article-body' \
+  --selector 'title=h1' \
+  --selector 'date=.publish-date' \
+  --selector 'author=.byline'
+```
+
+`--selector '.article-body'` 等价于 `--selector 'content=.article-body'`。省略配置文件时也可直接传入这些字段；`--selector content=auto` 启用正文自动识别。CSS 属性选择器中的等号照常使用，例如 `--selector 'title=h1[data-role="title"]'`。
+
+省略字段会使用内置规则；配置的元数据选择器匹配不到内容时，该字段留空。配置文件加载时检查 JSON 字段和 CSS 语法，错误信息标注文件路径及字段。报告中的 `site_selectors` 记录生效配置。内置学院模板使用 `.arti_*` 元数据，避免导航栏的 `.Article_Title` 干扰文章标题。
 
 ## 编辑与重新导出
 
@@ -156,6 +200,7 @@ ue-recover --input-ir output/reconstructed.json \
 
 - 提取段落、换行、列表、表格及文本格式。
 - 识别 `sudyfile-attr`、`isupload` 和附件链接，清理附件图标。
+- 将 `.wp_pdf_player` 的 `pdfsrc` 转换为 PDF 附件链接，使用属性中的文件标题；开启附件下载后使用本地文件路径。
 - 处理 `undefinedundefined`、连续 NBSP、空块、`Mso*`、`mso-*` 和 Office 命名空间残留。
 - 将加粗的中文编号短段落推断为标题，将末尾右对齐单位和日期推断为署名。
 - 为缩进、标题、署名等推断记录 `value`、`confidence`、`reason`、`source_nodes`。
@@ -181,7 +226,16 @@ UEditor 的保存结果是 HTML。结构还原以这份 HTML 中的内容为依�
 ue-recover: error: 正文选择器未找到：.missing。请确认页面是文章详情页，或使用 --selector 指定正文容器
 ```
 
-网络请求配置了 30 秒超时、User-Agent 和 HTTP 状态检查。
+网页、图片和附件共用网络请求与重试逻辑。默认每次请求超时 30 秒，临时失败最多重试 2 次，间隔按 250ms、500ms、1s、2s、4s 递增。
+
+超时、DNS 解析、连接故障、响应读取中断，以及 HTTP 408、429、500、502、503、504 会触发有限重试。HTTP 403、404 和 TLS 证书或协议错误直接返回。`Retry-After` 为 0–30 秒时按要求等待；更长等待或日期格式会结束当前请求，并输出原因。
+
+```sh
+ue-recover 'https://cse.seu.edu.cn/2026/1102/c22535a588376/page.htm' \
+  --output output/cse --retries 3 --timeout 45 --verbose --json
+```
+
+`--retries 0` 关闭重试。日志写入 stderr，包含 URL、错误类型、底层原因、尝试次数和重试间隔。`--json` 的失败结果包含 `code` 与 `network` 对象，其中 `kind` 区分 `timeout`、`dns`、`tls`、`connect`、`http_status`、`read_response` 等，`attempts`、`http_status`、`cause` 提供详情。资源下载失败的信息也记录在报告中。
 
 ## 开发与测试
 
@@ -192,12 +246,16 @@ cargo test
 
 测试使用本地 fixture 和本地 HTTP 服务，覆盖格式识别、资源处理、CLI、输出预设和 IR 再导出。
 
+真实样本覆盖教务处、计算机学院、电气学院和校史校友站点，包括纯图片文章、普通附件、内嵌 PDF、合并单元格、缺失元数据与导航栏标题干扰。样本来源见 [fixtures/SOURCES.md](fixtures/SOURCES.md)。本地 HTTP 测试覆盖重试成功、次数耗尽、超时、TLS 错误、响应截断、资源大小限制和附件路径替换。
+
 | 模块 | 职责 |
 | --- | --- |
 | `model.rs` | JSON IR 定义 |
 | `parser.rs`、`inline.rs`、`table.rs` | DOM 到 IR |
 | `rules.rs`、`css.rs`、`word.rs`、`inference.rs` | 格式识别与推断 |
 | `profile.rs` | 输出预设和格式开关 |
+| `site.rs`、`site_config.rs` | 模板识别与站点配置 |
+| `network.rs` | 网络诊断与有限重试 |
 | `renderer.rs`、`markdown.rs`、`typst.rs` | 文档导出 |
 | `downloader.rs`、`regenerate.rs` | 资源下载和 IR 再导出 |
 | `error.rs`、`log.rs` | 错误模型和日志 |

@@ -31,6 +31,14 @@ pub fn content_selector(document: &Html, requested: &str) -> Result<String> {
 
 pub fn metadata(document: &Html) -> Map<String, Value> {
     let mut result = Map::new();
+    let college_template = document
+        .select(&Selector::parse(".wp_articlecontent").unwrap())
+        .next()
+        .is_some()
+        && document
+            .select(&Selector::parse(".Article_Content").unwrap())
+            .next()
+            .is_none();
     for (key, selectors, labels) in [
         ("title", &[".Article_Title", ".arti_title"][..], &[][..]),
         (
@@ -54,28 +62,33 @@ pub fn metadata(document: &Html) -> Map<String, Value> {
             &["发布者", "发布人"][..],
         ),
     ] {
-        let value = selectors.iter().find_map(|selector| {
-            document
-                .select(&Selector::parse(selector).unwrap())
-                .find_map(|node| {
-                    let raw = rules::text(node);
-                    let mut text = raw.trim();
-                    for label in labels {
-                        if let Some(rest) = text.strip_prefix(label) {
-                            if let Some(rest) = rest.trim_start().strip_prefix([':', '：']) {
-                                text = rest.trim();
-                                break;
-                            }
-                        }
-                    }
-                    (!text.is_empty()).then(|| Value::String(text.into()))
-                })
-        });
+        let value = selectors
+            .iter()
+            .filter(|selector| !college_template || selector.starts_with(".arti_"))
+            .find_map(|selector| extract(document, selector, labels));
         if let Some(value) = value {
             result.insert(key.into(), value);
         }
     }
     result
+}
+
+pub fn extract(document: &Html, selector: &str, labels: &[&str]) -> Option<Value> {
+    document
+        .select(&Selector::parse(selector).ok()?)
+        .find_map(|node| {
+            let raw = rules::text(node);
+            let mut text = raw.trim();
+            for label in labels {
+                if let Some(rest) = text.strip_prefix(label) {
+                    if let Some(rest) = rest.trim_start().strip_prefix([':', '：']) {
+                        text = rest.trim();
+                        break;
+                    }
+                }
+            }
+            (!text.is_empty()).then(|| Value::String(text.into()))
+        })
 }
 
 #[cfg(test)]

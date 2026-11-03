@@ -3,6 +3,12 @@ pub struct Logger {
 }
 
 impl Logger {
+    pub fn retry(&self, error: &crate::error::NetworkError, delay: std::time::Duration) {
+        eprintln!(
+            "[ue-recover][retry] {error}；{}ms 后重试",
+            delay.as_millis()
+        );
+    }
     pub fn new(verbose: bool) -> Self {
         Self { verbose }
     }

@@ -1,20 +1,18 @@
 use crate::{
     error::{AssetError, RecoverError, Result},
+    log::Logger,
     model::Ir,
+    network::{self, Policy},
 };
 use reqwest::blocking::Client;
-use std::{
-    collections::HashMap,
-    fs,
-    io::{Read, Write},
-    path::Path,
-};
+use std::{collections::HashMap, fs, io::Write, path::Path};
 use url::Url;
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::{
+        io::Read,
         net::TcpListener,
         thread,
         time::{Duration, Instant, SystemTime, UNIX_EPOCH},
@@ -77,8 +75,22 @@ mod tests {
             .timeout(Duration::from_secs(2))
             .build()
             .unwrap();
-        let errors = download_attachments(&mut ir, &output, &client).unwrap();
-        let image_errors = download_images(&mut ir, &output, &client).unwrap();
+        let errors = download_attachments(
+            &mut ir,
+            &output,
+            &client,
+            Policy::default(),
+            &Logger::new(false),
+        )
+        .unwrap();
+        let image_errors = download_images(
+            &mut ir,
+            &output,
+            &client,
+            Policy::default(),
+            &Logger::new(false),
+        )
+        .unwrap();
         assert!(image_errors.is_empty());
         assert_eq!(server.join().unwrap(), 4);
         assert_eq!(ir.images.len(), 2);
@@ -152,16 +164,20 @@ pub fn download_attachments(
     ir: &mut Ir,
     output: &Path,
     client: &Client,
+    policy: Policy,
+    logger: &Logger,
 ) -> Result<Vec<serde_json::Value>> {
-    download_assets(ir, output, client, false)
+    download_assets(ir, output, client, false, policy, logger)
 }
 
 pub fn download_images(
     ir: &mut Ir,
     output: &Path,
     client: &Client,
+    policy: Policy,
+    logger: &Logger,
 ) -> Result<Vec<serde_json::Value>> {
-    download_assets(ir, output, client, true)
+    download_assets(ir, output, client, true, policy, logger)
 }
 
 fn download_assets(
@@ -169,6 +185,8 @@ fn download_assets(
     output: &Path,
     client: &Client,
     images: bool,
+    policy: Policy,
+    logger: &Logger,
 ) -> Result<Vec<serde_json::Value>> {
     let folder = if images { "images" } else { "attachments" };
     let field = if images { "src" } else { "href" };
@@ -195,7 +213,7 @@ fn download_assets(
         let result = if let Some(local) = downloaded.get(&url) {
             Ok(local.clone())
         } else {
-            fetch_attachment(client, &url, &directory, index, images)
+            fetch_attachment(client, &url, &directory, index, images, policy, logger)
                 .map(|name| format!("{folder}/{name}"))
         };
         match result {
@@ -214,7 +232,7 @@ fn download_assets(
                 }
             }
             Err(error) => errors
-                .push(serde_json::json!({"kind":if images {"image-download"} else {"attachment-download"},"url":url,"code":error.code(),"error":error.to_string()})),
+                .push(serde_json::json!({"kind":if images {"image-download"} else {"attachment-download"},"url":url,"code":error.code(),"error":error.to_string(),"network":match &error { AssetError::Network(error) => error.details(), _ => serde_json::Value::Null }})),
         }
     }
     Ok(errors)
@@ -226,24 +244,15 @@ fn fetch_attachment(
     directory: &Path,
     index: usize,
     image: bool,
+    policy: Policy,
+    logger: &Logger,
 ) -> std::result::Result<String, AssetError> {
     const LIMIT: u64 = 64 * 1024 * 1024;
     let parsed = Url::parse(url)?;
     if !matches!(parsed.scheme(), "http" | "https") {
         return Err(AssetError::Scheme);
     }
-    let response = client.get(url).send().and_then(|r| r.error_for_status())?;
-    if response.content_length().is_some_and(|size| size > LIMIT) {
-        return Err(AssetError::TooLarge { limit: LIMIT });
-    }
-    let mut bytes = Vec::new();
-    response
-        .take(LIMIT + 1)
-        .read_to_end(&mut bytes)
-        .map_err(AssetError::Read)?;
-    if bytes.len() as u64 > LIMIT {
-        return Err(AssetError::TooLarge { limit: LIMIT });
-    }
+    let bytes = network::fetch(client, url, policy, Some(LIMIT), logger)?.bytes;
     let mut name = file_name(url, index);
     if image {
         let extension = if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
