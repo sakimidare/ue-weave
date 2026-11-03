@@ -5,11 +5,14 @@ use serde_json::{json, Value};
 #[derive(Clone, Copy, Debug, Default, clap::ValueEnum, serde::Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Profile {
+    /// 保守：尽量保留格式。
     #[default]
     #[value(alias = "保守")]
     Conservative,
+    /// 均衡：简化字体和间距。
     #[value(alias = "均衡")]
     Balanced,
+    /// 激进：简化格式，方便编辑。
     #[value(alias = "激进")]
     Aggressive,
 }
@@ -42,60 +45,61 @@ pub struct Settings {
 }
 
 #[derive(clap::Args, Default)]
+#[command(next_help_heading = "格式调整")]
 pub struct Overrides {
-    /// 在 HTML、Markdown 和 Typst 正文上方显示标题、日期、作者等元数据。
-    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true")]
+    /// 在正文上方显示标题、日期、作者等信息；所有预设默认关闭。
+    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true", value_name="BOOL", hide_possible_values=true)]
     include_metadata: Option<bool>,
     /// 移除字体名称，可覆盖 --strip-fonts。
-    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true")]
+    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true", value_name="BOOL", hide_possible_values=true)]
     strip_font_family: Option<bool>,
     /// 移除字号，可覆盖 --strip-fonts。
-    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true")]
+    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true", value_name="BOOL", hide_possible_values=true)]
     strip_font_size: Option<bool>,
     /// 移除文字颜色，可覆盖 --strip-colors。
-    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true")]
+    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true", value_name="BOOL", hide_possible_values=true)]
     strip_text_color: Option<bool>,
     /// 移除背景色，可覆盖 --strip-colors。
-    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true")]
+    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true", value_name="BOOL", hide_possible_values=true)]
     strip_background_color: Option<bool>,
     /// 移除行距，可覆盖 --strip-layout。
-    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true")]
+    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true", value_name="BOOL", hide_possible_values=true)]
     strip_line_height: Option<bool>,
     /// 移除段间距，可覆盖 --strip-layout。
-    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true")]
+    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true", value_name="BOOL", hide_possible_values=true)]
     strip_paragraph_spacing: Option<bool>,
     /// 移除表格、列和单元格固定尺寸，可覆盖 --strip-layout。
-    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true")]
+    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true", value_name="BOOL", hide_possible_values=true)]
     strip_table_dimensions: Option<bool>,
     /// 移除单元格内边距，可覆盖 --strip-layout。
-    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true")]
+    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true", value_name="BOOL", hide_possible_values=true)]
     strip_cell_padding: Option<bool>,
     /// 移除图片显式宽高；默认保留。
-    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true")]
+    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true", value_name="BOOL", hide_possible_values=true)]
     strip_image_dimensions: Option<bool>,
     /// 移除字体和字号声明。
-    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true")]
+    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true", value_name="BOOL", hide_possible_values=true)]
     strip_fonts: Option<bool>,
     /// 移除文字颜色和背景色。
-    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true")]
+    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true", value_name="BOOL", hide_possible_values=true)]
     strip_colors: Option<bool>,
     /// 移除行距、段间距、固定表格尺寸和单元格内边距。
-    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true")]
+    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true", value_name="BOOL", hide_possible_values=true)]
     strip_layout: Option<bool>,
     /// 移除显式文本对齐。
-    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true")]
+    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true", value_name="BOOL", hide_possible_values=true)]
     strip_alignment: Option<bool>,
     /// 移除首行缩进声明；保留原文中的空格。
-    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true")]
+    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true", value_name="BOOL", hide_possible_values=true)]
     strip_indent: Option<bool>,
     /// 清理段落、标题和署名开头的排版空格。
-    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true")]
+    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true", value_name="BOOL", hide_possible_values=true)]
     trim_leading_spaces: Option<bool>,
     /// 移除纯空白段落，保留正文内换行。
-    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true")]
+    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true", value_name="BOOL", hide_possible_values=true)]
     drop_empty_paragraphs: Option<bool>,
     /// 简单列表和表格优先使用原生 Markdown。
-    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true")]
+    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true", value_name="BOOL", hide_possible_values=true)]
     native_markdown: Option<bool>,
 }
 

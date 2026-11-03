@@ -44,46 +44,64 @@ use std::time::Duration;
 use std::{fs, path::PathBuf};
 
 #[derive(Parser)]
-#[command(name = "ue-weave", about = "UEditor/WebPlus HTML 反编译与结构还原器")]
+#[command(
+    name = "ue-weave",
+    version,
+    about = "提取网页文章，导出 HTML、Markdown、Typst 或 JSON",
+    after_help = "URL、--input、--input-ir 三选一。格式开关用 =false 关闭，细分开关优先于组合开关和预设。\n\n示例：\n  ue-weave https://example.org/article.html -o output/\n  ue-weave --input page.html -o output/ --formats markdown --profile aggressive"
+)]
 struct Args {
+    /// 文章网址（HTTP/HTTPS）。
     url: Option<String>,
-    #[arg(long)]
+    /// 读取本地 HTML 文件。
+    #[arg(long, value_name = "FILE", help_heading = "输入与正文")]
     input: Option<PathBuf>,
     /// 从 JSON 正文生成文档。
-    #[arg(long)]
+    #[arg(long, value_name = "FILE", help_heading = "输入与正文")]
     input_ir: Option<PathBuf>,
-    /// IR 资源根目录，包含 images/ 和 attachments/。
-    #[arg(long, requires = "input_ir")]
+    /// JSON 的资源目录，默认使用 JSON 所在目录。
+    #[arg(
+        long,
+        requires = "input_ir",
+        value_name = "DIR",
+        help_heading = "资源与网络"
+    )]
     asset_root: Option<PathBuf>,
-    /// CSS 或 字段=CSS，可重复；字段为 content/title/date/source/author/publisher。
-    #[arg(long, value_name = "[FIELD=]CSS")]
+    /// 正文或字段选择器，可重复；如 '.article-body'、'title=h1'。
+    #[arg(long, value_name = "[FIELD=]CSS", help_heading = "输入与正文")]
     selector: Vec<String>,
-    /// 站点选择器 JSON 配置。
-    #[arg(long)]
+    /// 读取选择器 JSON 配置。
+    #[arg(long, value_name = "FILE", help_heading = "输入与正文")]
     site_config: Option<PathBuf>,
-    /// 临时网络故障的重试次数。
-    #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u8).range(0..=5))]
+    /// 重试次数，0–5；0 关闭。
+    #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u8).range(0..=5), value_name = "N", help_heading = "资源与网络")]
     retries: u8,
-    /// 每次请求的总超时，单位秒。
-    #[arg(long, default_value_t = 30, value_parser = clap::value_parser!(u64).range(1..=120))]
+    /// 单次请求超时秒数，1–120。
+    #[arg(long, default_value_t = 30, value_parser = clap::value_parser!(u64).range(1..=120), value_name = "SECONDS", help_heading = "资源与网络")]
     timeout: u64,
     /// 允许请求私网、回环和保留网段。
-    #[arg(long)]
+    #[arg(long, help_heading = "资源与网络")]
     allow_private_network: bool,
-    #[arg(short, long)]
+    /// 输出目录，自动创建；覆盖同名文档。
+    #[arg(short, long, value_name = "DIR", help_heading = "输出")]
     output: PathBuf,
-    #[arg(long)]
+    /// 关闭标题、署名和缩进推断。
+    #[arg(long, help_heading = "输入与正文")]
     no_inference: bool,
-    #[arg(long)]
+    /// 显示详细日志。
+    #[arg(long, help_heading = "运行信息")]
     verbose: bool,
-    #[arg(long)]
+    /// 在终端输出 JSON 运行结果；正文用 --formats json。
+    #[arg(long, help_heading = "运行信息")]
     json: bool,
-    #[arg(long)]
+    /// 下载图片到 images/，改用本地链接。
+    #[arg(long, help_heading = "资源与网络")]
     download_images: bool,
-    #[arg(long)]
+    /// 下载附件到 attachments/，改用本地链接。
+    #[arg(long, help_heading = "资源与网络")]
     download_attachments: bool,
     /// 选择 HTML、Markdown 和 Typst 的格式预设。
-    #[arg(long, value_enum, default_value_t = profile::Profile::Conservative)]
+    #[arg(long, value_enum, default_value_t = profile::Profile::Conservative, help_heading = "输出")]
     profile: profile::Profile,
     #[command(flatten)]
     output_options: profile::Overrides,

@@ -3,9 +3,13 @@ use crate::{markdown, model::Ir, profile::Settings, renderer, typst};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
 pub enum Format {
+    /// HTML 正文，保存为 reconstructed.html。
     Html,
+    /// Markdown 文档，保存为 reconstructed.md。
     Markdown,
+    /// Typst 文档，保存为 reconstructed.typ。
     Typst,
+    /// 可编辑的 JSON 正文，保存为 reconstructed.json。
     Json,
 }
 
@@ -14,6 +18,7 @@ pub struct Options {
     /// 输出格式，以逗号分隔：html,markdown,typst,json。
     #[arg(
         long,
+        help_heading = "输出",
         value_enum,
         value_delimiter = ',',
         default_value = "html,markdown,typst"
