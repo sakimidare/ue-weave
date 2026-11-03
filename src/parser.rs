@@ -35,12 +35,19 @@ fn collect_assets(
         }
         if rules::attachment_icon(image) {
             ir.warnings.push(serde_json::json!({"kind":"attachment-icon","original":image.html(),"action":"removed","removed":true,"ir_field":null,"inferred":false,"confidence":"high","reason":"识别附件装饰图标，输出保留附件链接并排除图标图片","source_nodes":[snapshot.element_id(image)]}));
-        } else {
+        } else if image
+            .value()
+            .attr("src")
+            .is_some_and(|value| crate::safety::safe_url(value, true))
+        {
             ir.images.push(serde_json::json!({"src":image.value().attr("src").map(|value|rules::absolute_url(base_url.as_ref(),value)),"alt":image.value().attr("alt").unwrap_or(""),"source_nodes":[snapshot.element_id(image)]}));
         }
     }
     for link in root.select(&Selector::parse("a").unwrap()) {
         if let Some(href) = link.value().attr("href") {
+            if !crate::safety::safe_url(href, false) {
+                continue;
+            }
             if let Some(mut attachment) = crate::attachment::identify(link, href) {
                 attachment["href"] =
                     serde_json::json!(rules::absolute_url(base_url.as_ref(), href));
@@ -190,7 +197,7 @@ fn collect_candidates<'a>(
             if matches!(name, "script" | "style" | "iframe" | "object" | "embed") {
                 continue;
             }
-            if is_content_block(name) {
+            if is_content_block(name) || crate::attachment::embedded_pdf(element).is_some() {
                 flush(root, &mut pending, output);
                 output.push(BlockCandidate::Element(element));
             } else if is_container(name)

@@ -49,11 +49,78 @@ pub fn check(root: ElementRef, ir: &mut crate::model::Ir) {
             .count();
         ir.warnings.push(serde_json::json!({"kind":"content-integrity-mismatch","value":evidence,"confidence":"high","reason":"正文文字或顺序存在差异；first_difference 标记首个差异位置，excerpt 字段提供对照片段","source_nodes":["n0"],"first_difference":offset,"original_excerpt":original.chars().skip(offset.saturating_sub(20)).take(80).collect::<String>(),"reconstructed_excerpt":reconstructed.chars().skip(offset.saturating_sub(20)).take(80).collect::<String>()}));
     }
+    let base = ir
+        .metadata
+        .get("resolved_base_url")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|value| url::Url::parse(value).ok());
+    let expected = resources(root, &base);
+    let actual = resources(output.root_element(), &base);
+    let resources_match = expected == actual;
+    ir.metadata.insert("resource_integrity".into(), serde_json::json!({"value":if resources_match {"matched"} else {"mismatch"},"expected":expected,"actual":actual,"reason":"独立统计正文图片、超链接和 PDF 阅读器地址，比较 URL 与出现次数"}));
+    if !resources_match {
+        ir.warnings.push(serde_json::json!({"kind":"resource-integrity-mismatch","source_nodes":["n0"],"expected":expected,"actual":actual,"reason":"资源地址或数量发生变化，详见 expected 与 actual"}));
+    }
+}
+
+fn resources(
+    root: ElementRef,
+    base: &Option<url::Url>,
+) -> std::collections::BTreeMap<String, usize> {
+    let mut result = std::collections::BTreeMap::new();
+    for node in root.descendants().filter_map(ElementRef::wrap) {
+        if node.ancestors().filter_map(ElementRef::wrap).any(|parent| {
+            matches!(
+                parent.value().name(),
+                "script" | "style" | "iframe" | "object" | "embed"
+            ) || (parent
+                .value()
+                .classes()
+                .any(|class| class == "wp_pdf_player")
+                && parent.value().attr("pdfsrc").is_some())
+        }) {
+            continue;
+        }
+        let pdf = node.value().classes().any(|class| class == "wp_pdf_player");
+        let resource = if pdf {
+            node.value().attr("pdfsrc").map(|url| ("link", url))
+        } else {
+            match node.value().name() {
+                "img" | "v:imagedata" if !crate::rules::attachment_icon(node) => {
+                    node.value().attr("src").map(|url| ("image", url))
+                }
+                "a" => node.value().attr("href").map(|url| ("link", url)),
+                _ => None,
+            }
+        };
+        if let Some((kind, url)) = resource {
+            if crate::safety::safe_url(url, kind == "image") {
+                let url = crate::rules::absolute_url(base.as_ref(), url);
+                *result.entry(format!("{kind}:{url}")).or_insert(0) += 1;
+            }
+        }
+    }
+    result
 }
 
 #[cfg(test)]
 mod tests {
     use scraper::Html;
+    #[test]
+    fn detects_image_loss_even_when_visible_text_matches() {
+        let doc =
+            Html::parse_document("<div class='Article_Content'><p>正文<img src='a.png'></p></div>");
+        let root = doc
+            .select(&scraper::Selector::parse(".Article_Content").unwrap())
+            .next()
+            .unwrap();
+        let mut ir = crate::parser::parse(&doc, ".Article_Content", false, None).unwrap();
+        assert_eq!(ir.metadata["resource_integrity"]["value"], "matched");
+        ir.blocks[0].runs.retain(|run| run.image.is_none());
+        super::check(root, &mut ir);
+        assert_eq!(ir.metadata["content_integrity"]["value"], "matched");
+        assert_eq!(ir.metadata["resource_integrity"]["value"], "mismatch");
+    }
     #[test]
     fn detects_loss_duplication_and_order_changes() {
         let document = Html::parse_document(

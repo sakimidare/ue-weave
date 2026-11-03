@@ -2,7 +2,7 @@ use scraper::{ElementRef, Selector};
 use serde_json::{json, Value};
 
 pub fn embedded_pdf(element: ElementRef) -> Option<(String, String)> {
-    if element.value().name() != "span" {
+    if !matches!(element.value().name(), "span" | "div") {
         return None;
     }
     if !element
@@ -90,7 +90,7 @@ pub fn identify(link: ElementRef, href: &str) -> Option<Value> {
 }
 
 /// Accept JSON objects plus single-quoted string literals. No expressions are evaluated.
-fn parse_metadata(raw: &str) -> Option<Value> {
+pub(crate) fn parse_metadata(raw: &str) -> Option<Value> {
     if let Ok(value) = serde_json::from_str::<Value>(raw) {
         return value.is_object().then_some(value);
     }
@@ -139,6 +139,71 @@ fn parse_metadata(raw: &str) -> Option<Value> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn div_pdf_body_survives_profiles_and_integrity_detects_its_loss() {
+        let doc = scraper::Html::parse_document(include_str!("../fixtures/webplus-div-pdf.html"));
+        let ir = crate::parser::parse(
+            &doc,
+            ".Article_Content",
+            false,
+            Some("https://example.org/article".into()),
+        )
+        .unwrap();
+        assert_eq!(ir.attachments.len(), 1);
+        assert_eq!(
+            ir.attachments[0]["href"],
+            "https://example.org/files/news.pdf"
+        );
+        assert_eq!(ir.metadata["content_integrity"]["value"], "matched");
+        assert!(
+            ir.metadata["content_integrity"]["original_characters"]
+                .as_u64()
+                .unwrap()
+                > 0
+        );
+        let nodes = &ir.attachments[0]["source_nodes"];
+        assert!(!ir
+            .warnings
+            .iter()
+            .any(|w| w["kind"] == "empty-element" && &w["source_nodes"] == nodes));
+        for profile in [
+            crate::profile::Profile::Conservative,
+            crate::profile::Profile::Balanced,
+            crate::profile::Profile::Aggressive,
+        ] {
+            let output = crate::profile::prepare(&ir, profile.settings());
+            let documents =
+                crate::export::render(&output.ir, profile.settings(), &Default::default());
+            for text in [&documents.html, &documents.markdown, &documents.typst] {
+                assert!(
+                    text.contains("https://example.org/files/news.pdf"),
+                    "{text}"
+                );
+            }
+            assert_eq!(documents.html.matches("href=").count(), 1);
+        }
+        let root = doc
+            .select(&scraper::Selector::parse(".Article_Content").unwrap())
+            .next()
+            .unwrap();
+        let mut damaged = ir.clone();
+        damaged.blocks.clear();
+        crate::integrity::check(root, &mut damaged);
+        assert_eq!(damaged.metadata["content_integrity"]["value"], "mismatch");
+    }
+
+    #[test]
+    fn div_pdf_with_fallback_content_is_atomic_and_safe() {
+        let doc = scraper::Html::parse_document("<div class='Article_Content'><p>前</p><div class='wp_pdf_player' pdfsrc='/a.pdf'><p>下载 PDF</p></div><p>后</p><div class='wp_pdf_player' pdfsrc='javascript:alert(1)'>说明</div></div>");
+        let ir = crate::parser::parse(&doc, ".Article_Content", false, None).unwrap();
+        let html = crate::renderer::render(&ir);
+        assert_eq!(ir.attachments.len(), 1);
+        assert_eq!(html.matches("下载 PDF").count(), 1);
+        assert!(html.contains("说明"));
+        assert!(!html.contains("javascript:"));
+        assert_eq!(ir.metadata["content_integrity"]["value"], "matched");
+    }
+
     #[test]
     fn embedded_pdf_keeps_links_and_rejects_unsafe_sources() {
         let doc = scraper::Html::parse_document("<div class='Article_Content'><p><span class='wp_pdf_player' pdfsrc='/file.pdf' sudyfile-attr=\"{'title':'undefinedundefined'}\"></span></p><p><span class='wp_pdf_player' pdfsrc='javascript:alert(1)'>保留说明</span></p></div>");

@@ -14,14 +14,51 @@ pub fn safe_url(value: &str, image: bool) -> bool {
 }
 
 pub fn safe_css(value: &str) -> bool {
-    let lower = value.to_ascii_lowercase();
-    !value
-        .chars()
-        .any(|c| c.is_control() || matches!(c, ';' | '{' | '}' | '\\' | '<' | '>'))
-        && !corrupted_style(value)
-        && !["url(", "expression", "/*", "@"]
-            .iter()
-            .any(|part| lower.contains(part))
+    if corrupted_style(value) || value.trim().is_empty() {
+        return false;
+    }
+    let mut input = cssparser::ParserInput::new(value);
+    css_tokens(&mut cssparser::Parser::new(&mut input), 0)
+}
+
+fn css_tokens(parser: &mut cssparser::Parser<'_, '_>, depth: usize) -> bool {
+    use cssparser::Token;
+    if depth > 32 {
+        return false;
+    }
+    while !parser.is_exhausted() {
+        let Ok(token) = parser.next().cloned() else {
+            return false;
+        };
+        match token {
+            Token::Ident(_)
+            | Token::QuotedString(_)
+            | Token::Hash(_)
+            | Token::IDHash(_)
+            | Token::Comma => {}
+            Token::Number { value, .. } | Token::Dimension { value, .. } if value.is_finite() => {}
+            Token::Percentage { unit_value, .. } if unit_value.is_finite() => {}
+            Token::Delim('+' | '-' | '*' | '/') => {}
+            Token::Function(name)
+                if ["rgb", "rgba", "hsl", "hsla", "calc", "min", "max", "clamp"]
+                    .contains(&name.to_ascii_lowercase().as_str()) =>
+            {
+                let nested: Result<(), cssparser::ParseError<'_, ()>> =
+                    parser.parse_nested_block(|nested| {
+                        if css_tokens(nested, depth + 1) {
+                            Ok(())
+                        } else {
+                            Err(nested.new_custom_error(()))
+                        }
+                    });
+                if nested.is_err() {
+                    return false;
+                }
+            }
+            _ => return false,
+        }
+    }
+    true
 }
 
 pub fn corrupted_style(value: &str) -> bool {
@@ -51,5 +88,8 @@ mod tests {
         for value in ["red;background:url(x)", "expression(x)", "u\\72l(x)"] {
             assert!(!safe_css(value));
         }
+        assert!(safe_css("\"url(\""));
+        assert!(safe_css("rgb(255, 0, 0)"));
+        assert!(!safe_css("u\\72l(\"https://example.org\")"));
     }
 }

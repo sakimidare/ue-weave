@@ -217,111 +217,6 @@ fn font_families(value: &str) -> Vec<String> {
     families
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn zero_and_negative_list_numbers_are_not_clamped() {
-        let document =
-            scraper::Html::parse_document(include_str!("../fixtures/zero-negative-list.html"));
-        let ir = crate::parser::parse(&document, ".Article_Content", false, None).unwrap();
-        let output = super::render(&ir);
-        assert_eq!(output.matches("#grid(").count(), 3);
-        assert!(output.contains("#text(\"0.\")"));
-        assert!(output.contains("#text(\"-1.\")"));
-        assert!(output.contains("#text(\"-2.\")"));
-        let html = crate::renderer::render(&ir);
-        assert!(html.contains("start=\"0\""));
-        assert!(html.contains("start=\"-2\""));
-    }
-    #[test]
-    fn reversed_lists_keep_explicit_numbers_and_roman_style() {
-        let document =
-            scraper::Html::parse_document(include_str!("../fixtures/reversed-list.html"));
-        let ir = crate::parser::parse(&document, ".Article_Content", false, None).unwrap();
-        let output = super::render(&ir);
-        assert!(output.contains("numbering: \"I.\""));
-        assert!(output.contains("enum.item(4)"));
-        assert!(output.contains("enum.item(3)"));
-        assert!(output.contains("numbering: \"a.\""));
-        assert!(!ir.warnings.iter().any(|w| w["kind"] == "export-limitation"));
-    }
-    #[test]
-    fn css_rgb_colors_and_alpha_convert_to_bounded_hex() {
-        assert_eq!(
-            super::color("rgb(255, 0, 128)").as_deref(),
-            Some("rgb(\"#ff0080ff\")")
-        );
-        assert_eq!(
-            super::color("rgba(100%, 0%, 0%, 0.5)").as_deref(),
-            Some("rgb(\"#ff000080\")")
-        );
-        assert_eq!(
-            super::color("rgb(0 255 0 / 50%)").as_deref(),
-            Some("rgb(\"#00ff0080\")")
-        );
-        assert!(super::color("rgb(NaN, 0, 0)").is_none());
-        assert!(super::color("rgb(1,2)").is_none());
-    }
-    #[test]
-    fn font_names_and_highlights_are_safe_typst_values() {
-        assert_eq!(
-            super::font_families("'Family, Name', \"Other\""),
-            ["Family, Name", "Other"]
-        );
-        let document = scraper::Html::parse_document("<div class='Article_Content'><p><span style='font-family:DejaVu Sans;background-color:#ffeeaa'>[文字] #</span></p></div>");
-        let ir = crate::parser::parse(&document, ".Article_Content", false, None).unwrap();
-        let output = super::render(&ir);
-        assert!(output.contains("font: (\"DejaVu Sans\",)"));
-        assert!(output.contains("#highlight(fill: rgb(\"#ffeeaa\"))"));
-        assert!(output.contains("#text(\"[文字] #\")"));
-    }
-
-    #[test]
-    fn corrupted_font_declarations_stay_in_snapshot_only() {
-        let document = scraper::Html::parse_document(include_str!("../fixtures/seu-585911.html"));
-        let ir = crate::parser::parse(&document, ".Article_Content", false, None).unwrap();
-        assert!(ir
-            .warnings
-            .iter()
-            .any(|warning| warning["kind"] == "undefinedundefined-style"));
-        assert!(serde_json::to_string(&ir.original_nodes)
-            .unwrap()
-            .contains("undefinedundefined"));
-        assert!(!super::render(&ir)
-            .to_lowercase()
-            .contains("undefinedundefined"));
-        assert!(!crate::renderer::render(&ir)
-            .to_lowercase()
-            .contains("undefinedundefined"));
-    }
-
-    #[test]
-    fn wrapped_undefined_font_variants_are_filtered_in_every_export() {
-        for source in [
-            include_str!("../fixtures/seu-583204.html"),
-            include_str!("../fixtures/seu-583286.html"),
-        ] {
-            let document = scraper::Html::parse_document(source);
-            let ir = crate::parser::parse(&document, ".Article_Content", false, None).unwrap();
-            for output in [
-                super::render(&ir),
-                crate::renderer::render(&ir),
-                crate::markdown::render(&ir),
-            ] {
-                assert!(!output.to_ascii_lowercase().contains("undefinedmicrosoft"));
-            }
-            assert!(ir
-                .warnings
-                .iter()
-                .any(|w| w["kind"] == "undefinedundefined-style"));
-            assert!(serde_json::to_string(&ir.original_nodes)
-                .unwrap()
-                .contains("undefined"));
-        }
-        assert!(crate::safety::safe_css("Undefined Sans"));
-    }
-}
-
 fn block_typst(block: &Block) -> String {
     let content = block.runs.iter().map(run_typst).collect::<String>();
     match block.kind.as_str() {
@@ -631,4 +526,109 @@ pub fn render(ir: &Ir) -> String {
         .map(block_typst)
         .collect::<Vec<_>>()
         .join("\n\n")
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn zero_and_negative_list_numbers_are_not_clamped() {
+        let document =
+            scraper::Html::parse_document(include_str!("../fixtures/zero-negative-list.html"));
+        let ir = crate::parser::parse(&document, ".Article_Content", false, None).unwrap();
+        let output = super::render(&ir);
+        assert_eq!(output.matches("#grid(").count(), 3);
+        assert!(output.contains("#text(\"0.\")"));
+        assert!(output.contains("#text(\"-1.\")"));
+        assert!(output.contains("#text(\"-2.\")"));
+        let html = crate::renderer::render(&ir);
+        assert!(html.contains("start=\"0\""));
+        assert!(html.contains("start=\"-2\""));
+    }
+    #[test]
+    fn reversed_lists_keep_explicit_numbers_and_roman_style() {
+        let document =
+            scraper::Html::parse_document(include_str!("../fixtures/reversed-list.html"));
+        let ir = crate::parser::parse(&document, ".Article_Content", false, None).unwrap();
+        let output = super::render(&ir);
+        assert!(output.contains("numbering: \"I.\""));
+        assert!(output.contains("enum.item(4)"));
+        assert!(output.contains("enum.item(3)"));
+        assert!(output.contains("numbering: \"a.\""));
+        assert!(!ir.warnings.iter().any(|w| w["kind"] == "export-limitation"));
+    }
+    #[test]
+    fn css_rgb_colors_and_alpha_convert_to_bounded_hex() {
+        assert_eq!(
+            super::color("rgb(255, 0, 128)").as_deref(),
+            Some("rgb(\"#ff0080ff\")")
+        );
+        assert_eq!(
+            super::color("rgba(100%, 0%, 0%, 0.5)").as_deref(),
+            Some("rgb(\"#ff000080\")")
+        );
+        assert_eq!(
+            super::color("rgb(0 255 0 / 50%)").as_deref(),
+            Some("rgb(\"#00ff0080\")")
+        );
+        assert!(super::color("rgb(NaN, 0, 0)").is_none());
+        assert!(super::color("rgb(1,2)").is_none());
+    }
+    #[test]
+    fn font_names_and_highlights_are_safe_typst_values() {
+        assert_eq!(
+            super::font_families("'Family, Name', \"Other\""),
+            ["Family, Name", "Other"]
+        );
+        let document = scraper::Html::parse_document("<div class='Article_Content'><p><span style='font-family:DejaVu Sans;background-color:#ffeeaa'>[文字] #</span></p></div>");
+        let ir = crate::parser::parse(&document, ".Article_Content", false, None).unwrap();
+        let output = super::render(&ir);
+        assert!(output.contains("font: (\"DejaVu Sans\",)"));
+        assert!(output.contains("#highlight(fill: rgb(\"#ffeeaa\"))"));
+        assert!(output.contains("#text(\"[文字] #\")"));
+    }
+
+    #[test]
+    fn corrupted_font_declarations_stay_in_snapshot_only() {
+        let document = scraper::Html::parse_document(include_str!("../fixtures/seu-585911.html"));
+        let ir = crate::parser::parse(&document, ".Article_Content", false, None).unwrap();
+        assert!(ir
+            .warnings
+            .iter()
+            .any(|warning| warning["kind"] == "undefinedundefined-style"));
+        assert!(serde_json::to_string(&ir.original_nodes)
+            .unwrap()
+            .contains("undefinedundefined"));
+        assert!(!super::render(&ir)
+            .to_lowercase()
+            .contains("undefinedundefined"));
+        assert!(!crate::renderer::render(&ir)
+            .to_lowercase()
+            .contains("undefinedundefined"));
+    }
+
+    #[test]
+    fn wrapped_undefined_font_variants_are_filtered_in_every_export() {
+        for source in [
+            include_str!("../fixtures/seu-583204.html"),
+            include_str!("../fixtures/seu-583286.html"),
+        ] {
+            let document = scraper::Html::parse_document(source);
+            let ir = crate::parser::parse(&document, ".Article_Content", false, None).unwrap();
+            for output in [
+                super::render(&ir),
+                crate::renderer::render(&ir),
+                crate::markdown::render(&ir),
+            ] {
+                assert!(!output.to_ascii_lowercase().contains("undefinedmicrosoft"));
+            }
+            assert!(ir
+                .warnings
+                .iter()
+                .any(|w| w["kind"] == "undefinedundefined-style"));
+            assert!(serde_json::to_string(&ir.original_nodes)
+                .unwrap()
+                .contains("undefined"));
+        }
+        assert!(crate::safety::safe_css("Undefined Sans"));
+    }
 }

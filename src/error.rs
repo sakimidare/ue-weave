@@ -3,6 +3,8 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum RecoverError {
+    #[error("IR 校验失败：{field}: {reason}")]
+    InvalidIr { field: String, reason: String },
     #[error(transparent)]
     Network(#[from] NetworkError),
     #[error("读取站点配置失败：{path}: {source}")]
@@ -61,6 +63,8 @@ pub type Result<T> = std::result::Result<T, RecoverError>;
 
 #[derive(Debug, Error)]
 pub enum AssetError {
+    #[error("资源类型校验失败：{0}")]
+    ContentType(String),
     #[error(transparent)]
     Network(#[from] NetworkError),
     #[error("资源 URL 无效：{0}")]
@@ -80,6 +84,7 @@ pub enum AssetError {
 impl AssetError {
     pub fn code(&self) -> &'static str {
         match self {
+            Self::ContentType(_) => "content_type",
             Self::Network(error) => error.kind,
             Self::Url(_) => "invalid_url",
             Self::Scheme => "unsupported_scheme",
@@ -97,6 +102,7 @@ impl RecoverError {
             Self::Config { .. } => "invalid_config",
             Self::Arguments(_) => "invalid_arguments",
             Self::ReadIr { .. } => "invalid_ir",
+            Self::InvalidIr { .. } => "invalid_ir",
             Self::ReadInput { .. } => "read_input",
             Self::Request { .. } => "request_failed",
             Self::InvalidSelector { .. } => "invalid_selector",

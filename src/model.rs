@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone, Default)]
+#[serde(default, deny_unknown_fields)]
 pub struct Evidence {
     pub value: serde_json::Value,
     pub confidence: String,
@@ -8,7 +9,8 @@ pub struct Evidence {
     pub source_nodes: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Default)]
+#[serde(default, deny_unknown_fields)]
 pub struct Run {
     #[serde(default)]
     pub line_break: bool,
@@ -44,6 +46,7 @@ pub struct ImageAttributes {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct Block {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub word_structure: Option<Evidence>,
@@ -67,13 +70,19 @@ pub struct Block {
     pub rows: Vec<Vec<TableCell>>,
     #[serde(rename = "type")]
     pub kind: String,
+    #[serde(default)]
     pub text: String,
+    #[serde(default)]
     pub indent: Evidence,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub line_height: Option<Evidence>,
+    #[serde(default = "unknown")]
     pub align: String,
+    #[serde(default)]
     pub runs: Vec<Run>,
+    #[serde(default)]
     pub raw_html: String,
+    #[serde(default)]
     pub source_nodes: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub level: Option<Evidence>,
@@ -87,9 +96,13 @@ pub struct TableCell {
     pub styles: std::collections::BTreeMap<String, Evidence>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blocks: Vec<Block>,
+    #[serde(default)]
     pub header: bool,
+    #[serde(default = "one")]
     pub colspan: usize,
+    #[serde(default = "one")]
     pub rowspan: usize,
+    #[serde(default)]
     pub runs: Vec<Run>,
 }
 
@@ -118,14 +131,29 @@ pub struct ListAttributes {
 }
 
 #[derive(Serialize, Deserialize, Default, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct Ir {
+    pub schema: crate::ir_format::Schema,
+    pub tool: crate::ir_format::Tool,
+    #[serde(default)]
     pub metadata: serde_json::Map<String, serde_json::Value>,
     pub blocks: Vec<Block>,
+    #[serde(default)]
     pub attachments: Vec<serde_json::Value>,
+    #[serde(default)]
     pub images: Vec<serde_json::Value>,
+    #[serde(default)]
     pub warnings: Vec<serde_json::Value>,
+    #[serde(default)]
     pub original_nodes: Vec<serde_json::Value>,
     pub source: Option<String>,
+}
+
+fn unknown() -> String {
+    "unknown".into()
+}
+fn one() -> usize {
+    1
 }
 
 impl Block {

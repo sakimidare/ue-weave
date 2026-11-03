@@ -1,16 +1,6 @@
 use scraper::ElementRef;
 
-pub const TABLE_STYLES: &[&str] = &[
-    "width",
-    "height",
-    "border",
-    "border-collapse",
-    "border-spacing",
-    "table-layout",
-    "background-color",
-    "margin-left",
-    "margin-right",
-];
+use crate::style_registry::{CELL_STYLES, TABLE_STYLES};
 
 pub fn table_styles(
     table: ElementRef,
@@ -126,27 +116,6 @@ pub fn columns_html(groups: &[crate::model::TableColumn]) -> String {
         })
         .collect()
 }
-
-pub const CELL_STYLES: &[&str] = &[
-    "text-align",
-    "vertical-align",
-    "width",
-    "height",
-    "border",
-    "border-top",
-    "border-right",
-    "border-bottom",
-    "border-left",
-    "border-color",
-    "border-width",
-    "border-style",
-    "background-color",
-    "padding",
-    "padding-top",
-    "padding-right",
-    "padding-bottom",
-    "padding-left",
-];
 
 pub fn cell_styles(
     cell: ElementRef,

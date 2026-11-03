@@ -5,6 +5,7 @@ use std::{error::Error, io::Read, time::Duration};
 
 #[derive(Clone, Copy)]
 pub struct Policy {
+    pub allow_private_network: bool,
     pub retries: u8,
     pub backoff: Duration,
 }
@@ -12,6 +13,7 @@ pub struct Policy {
 impl Default for Policy {
     fn default() -> Self {
         Self {
+            allow_private_network: false,
             retries: 2,
             backoff: Duration::from_millis(250),
         }
@@ -23,6 +25,9 @@ pub struct Download {
     pub url: String,
     pub charset: Option<String>,
     pub attempts: u8,
+    pub status: u16,
+    pub content_type: Option<String>,
+    pub content_disposition: Option<String>,
 }
 
 fn chain(error: &(dyn Error + 'static)) -> String {
@@ -39,6 +44,9 @@ fn chain(error: &(dyn Error + 'static)) -> String {
 }
 
 fn classify(error: &(dyn Error + 'static), fallback: &'static str) -> &'static str {
+    if chain(error).contains("network-policy:") {
+        return "network_policy";
+    }
     let mut current = Some(error);
     while let Some(source) = current {
         if let Some(error) = source.downcast_ref::<reqwest::Error>() {
@@ -114,24 +122,6 @@ fn transient(error: &NetworkError) -> bool {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn classifies_nested_dns_error_and_retains_cause_chain() {
-        let error = std::io::Error::other(std::io::Error::other(
-            "dns error: failed to lookup address information",
-        ));
-        let error = failure("https://example.invalid/", error, "connect");
-        assert_eq!(error.kind, "dns");
-        assert!(error.details()["cause"]
-            .as_str()
-            .unwrap()
-            .contains("failed to lookup"));
-        assert!(transient(&error));
-    }
-}
-
 pub fn fetch(
     client: &Client,
     url: &str,
@@ -139,6 +129,9 @@ pub fn fetch(
     limit: Option<u64>,
     logger: &Logger,
 ) -> Result<Download, NetworkError> {
+    let parsed = url::Url::parse(url).map_err(|error| failure(url, error, "invalid_url"))?;
+    crate::network_policy::check_url(&parsed, policy.allow_private_network)
+        .map_err(|error| failure(url, error, "network_policy"))?;
     let attempts = policy.retries.min(5) + 1;
     for attempt in 1..=attempts {
         logger.stage("request", format!("GET {url}，尝试 {attempt}/{attempts}"));
@@ -193,11 +186,17 @@ pub fn fetch(
                     source: None,
                 });
             }
-            let charset = response
+            let content_type = response
                 .headers()
                 .get(reqwest::header::CONTENT_TYPE)
                 .and_then(|s| s.to_str().ok())
-                .and_then(input::charset);
+                .map(str::to_string);
+            let charset = content_type.as_deref().and_then(input::charset);
+            let content_disposition = response
+                .headers()
+                .get(reqwest::header::CONTENT_DISPOSITION)
+                .and_then(|value| value.to_str().ok())
+                .map(str::to_string);
             let mut bytes = Vec::new();
             response
                 .take(limit.map(|n| n.saturating_add(1)).unwrap_or(u64::MAX))
@@ -218,6 +217,9 @@ pub fn fetch(
                 url: resolved,
                 charset,
                 attempts: attempt,
+                status: status.as_u16(),
+                content_type,
+                content_disposition,
             })
         })();
         match result {
@@ -240,4 +242,22 @@ pub fn fetch(
         }
     }
     unreachable!("at least one attempt")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn classifies_nested_dns_error_and_retains_cause_chain() {
+        let error = std::io::Error::other(std::io::Error::other(
+            "dns error: failed to lookup address information",
+        ));
+        let error = failure("https://example.invalid/", error, "connect");
+        assert_eq!(error.kind, "dns");
+        assert!(error.details()["cause"]
+            .as_str()
+            .unwrap()
+            .contains("failed to lookup"));
+        assert!(transient(&error));
+    }
 }

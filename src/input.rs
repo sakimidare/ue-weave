@@ -54,7 +54,7 @@ impl Input {
         let (text, _, replaced) = encoding.decode(&bytes);
         let html = text.into_owned();
         if replaced {
-            warnings.push(json!({"kind":"decode-replacement","value":encoding.name(),"confidence":"high","reason":"解码时使用了替换字符；对应输入字节见 source.bin","source_nodes":[]}));
+            warnings.push(json!({"kind":"decode-replacement","value":encoding.name(),"confidence":"high","reason":"部分输入字节无法按检测到的编码解码，已使用替换字符","source_nodes":[]}));
         }
         Self {
             bytes,

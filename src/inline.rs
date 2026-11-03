@@ -94,6 +94,7 @@ impl RunContext {
                 element
                     .value()
                     .attr("href")
+                    .filter(|value| crate::safety::safe_url(value, false))
                     .map(|value| rules::absolute_url(self.base_url.as_ref(), value))
             } else {
                 self.link.clone()
@@ -133,7 +134,12 @@ pub(crate) fn text_run(text: &str, context: &RunContext) -> Option<Run> {
 }
 
 pub(crate) fn image_run(element: ElementRef, context: &RunContext) -> Option<Run> {
-    (!rules::attachment_icon(element)).then(|| Run {
+    (!rules::attachment_icon(element)
+        && element
+            .value()
+            .attr("src")
+            .is_some_and(|value| crate::safety::safe_url(value, true)))
+    .then(|| Run {
         line_break: false,
         image_attributes: Some(crate::model::ImageAttributes {
             alt: element.value().attr("alt").map(str::to_string),
@@ -195,7 +201,7 @@ pub(crate) fn visit_node(element: ElementRef, context: &RunContext, output: &mut
                 visit_node(child_element, &context, output);
             }
         } else if let Node::Text(value) = child.value() {
-            if let Some(run) = text_run(&value.to_string(), &context) {
+            if let Some(run) = text_run(value, &context) {
                 output.push(run);
             }
         }

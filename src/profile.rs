@@ -36,6 +36,7 @@ pub struct Settings {
     pub strip_layout: bool,
     pub strip_alignment: bool,
     pub strip_indent: bool,
+    pub trim_leading_spaces: bool,
     pub drop_empty_paragraphs: bool,
     pub native_markdown: bool,
 }
@@ -87,6 +88,9 @@ pub struct Overrides {
     /// 移除首行缩进声明；保留原文中的空格。
     #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true")]
     strip_indent: Option<bool>,
+    /// 清理段落、标题和署名开头的排版空格。
+    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true")]
+    trim_leading_spaces: Option<bool>,
     /// 移除纯空白段落，保留正文内换行。
     #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true")]
     drop_empty_paragraphs: Option<bool>,
@@ -102,6 +106,7 @@ impl Profile {
             Self::Balanced => Settings {
                 strip_fonts: true,
                 strip_layout: true,
+                native_markdown: true,
                 ..Settings::default()
             },
             Self::Aggressive => Settings {
@@ -110,6 +115,7 @@ impl Profile {
                 strip_layout: true,
                 strip_alignment: true,
                 strip_indent: true,
+                trim_leading_spaces: true,
                 drop_empty_paragraphs: true,
                 native_markdown: true,
                 ..Settings::default()
@@ -144,6 +150,7 @@ impl Overrides {
             strip_layout,
             strip_alignment,
             strip_indent,
+            trim_leading_spaces,
             drop_empty_paragraphs,
             native_markdown
         );
@@ -165,8 +172,8 @@ impl Overrides {
 
 pub fn prepare(source: &Ir, settings: Settings) -> Output {
     let mut ir = source.clone();
-    transform(&mut ir.blocks, settings);
     let mut changes = Vec::new();
+    transform(&mut ir.blocks, settings, &mut changes);
     diff(
         &json!(source.blocks),
         &json!(ir.blocks),
@@ -174,6 +181,13 @@ pub fn prepare(source: &Ir, settings: Settings) -> Output {
         &[],
         &mut changes,
     );
+    Output { ir, changes }
+}
+
+pub fn prepare_documents(source: &Ir, settings: Settings) -> Output {
+    let mut ir = source.clone();
+    let mut changes = Vec::new();
+    transform(&mut ir.blocks, settings, &mut changes);
     Output { ir, changes }
 }
 
@@ -198,8 +212,22 @@ fn run(run: &mut Run, settings: Settings) {
     }
 }
 
-fn transform(blocks: &mut Vec<Block>, settings: Settings) {
+fn transform(blocks: &mut Vec<Block>, settings: Settings, changes: &mut Vec<Value>) {
     for block in blocks.iter_mut() {
+        if settings.native_markdown
+            && block.kind == "table"
+            && crate::markdown::table::header(block) == Some(crate::markdown::table::Header::Empty)
+        {
+            changes.push(json!({
+                "kind": "markdown-table-header", "field": "markdown.header",
+                "original": null, "value": "empty", "inferred": false,
+                "confidence": "high", "source_nodes": block.source_nodes,
+                "reason": "为 GFM 表格添加空表头，原有各行保持为数据行；完整 IR 保留原始结构"
+            }));
+        }
+        if settings.trim_leading_spaces {
+            trim_leading_spaces(block, changes);
+        }
         if settings.strip_line_height {
             block.line_height = None;
         }
@@ -240,7 +268,7 @@ fn transform(blocks: &mut Vec<Block>, settings: Settings) {
         if settings.strip_background_color {
             block.table_styles.remove("background-color");
         }
-        transform(&mut block.children, settings);
+        transform(&mut block.children, settings, changes);
         for cell in block.rows.iter_mut().flatten() {
             if settings.strip_table_dimensions {
                 cell.styles.remove("width");
@@ -267,7 +295,7 @@ fn transform(blocks: &mut Vec<Block>, settings: Settings) {
             for item in &mut cell.runs {
                 run(item, settings);
             }
-            transform(&mut cell.blocks, settings);
+            transform(&mut cell.blocks, settings, changes);
         }
     }
     if settings.drop_empty_paragraphs {
@@ -280,6 +308,61 @@ fn transform(blocks: &mut Vec<Block>, settings: Settings) {
                     .iter()
                     .all(|run| run.image.is_none() && run.text.chars().all(char::is_whitespace)))
         });
+    }
+}
+
+fn trim_leading_spaces(block: &mut Block, changes: &mut Vec<Value>) {
+    if !matches!(block.kind.as_str(), "paragraph" | "heading" | "signature") {
+        return;
+    }
+    // Keep explicitly preformatted content and inline code intact.
+    let fragment = scraper::Html::parse_fragment(&block.raw_html);
+    if fragment
+        .tree
+        .nodes()
+        .filter_map(scraper::ElementRef::wrap)
+        .any(|el| {
+            matches!(el.value().name(), "pre" | "code")
+                || crate::rules::style(el, "white-space").is_some_and(|value| {
+                    matches!(
+                        value.trim().to_ascii_lowercase().as_str(),
+                        "pre" | "pre-wrap" | "break-spaces"
+                    )
+                })
+        })
+    {
+        return;
+    }
+    let mut changed = false;
+    for (index, run) in block.runs.iter_mut().enumerate() {
+        if run.image.is_some() || run.line_break {
+            break;
+        }
+        let trimmed = run
+            .text
+            .trim_start_matches([' ', '\t', '\u{a0}', '\u{3000}']);
+        let removed = run.text.len() - trimmed.len();
+        if removed > 0 {
+            changes.push(json!({
+                "kind": "leading-spaces",
+                "field": format!("runs[{index}].text"),
+                "original": run.text,
+                "value": trimmed,
+                "removed_prefix": &run.text[..removed],
+                "source_nodes": block.source_nodes,
+                "confidence": "high",
+                "inferred": false,
+                "reason": "按 trim-leading-spaces 开关清理段首排版空白"
+            }));
+            run.text.drain(..removed);
+            changed = true;
+        }
+        if !run.text.is_empty() {
+            break;
+        }
+    }
+    if changed {
+        block.text = block.runs.iter().map(|run| run.text.as_str()).collect();
     }
 }
 
@@ -310,6 +393,44 @@ fn diff(before: &Value, after: &Value, path: &str, sources: &[Value], out: &mut 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn leading_spaces_are_cleaned_across_runs_only_in_output() {
+        let document = scraper::Html::parse_document("<div class='Article_Content'><p> &nbsp;<span>　\t</span><b> 标题</b> 中间&nbsp;空格<br>  下一行</p><h2>&nbsp;标题</h2><p style='text-align:right'>　教务处</p><pre>  code\n  next</pre><p style='white-space:pre-wrap'>  保留</p><p>  <code>code</code></p><p><img src='a.png'>  图片后</p></div>");
+        let source = crate::parser::parse(&document, ".Article_Content", true, None).unwrap();
+        let snapshot = serde_json::to_string(&source).unwrap();
+        let output = prepare(&source, Profile::Aggressive.settings());
+        assert_eq!(output.ir.blocks[0].text, "标题 中间\u{a0}空格\n  下一行");
+        assert_eq!(output.ir.blocks[1].text, "标题");
+        assert_eq!(output.ir.blocks[2].text, "教务处");
+        for index in 3..source.blocks.len() {
+            assert_eq!(output.ir.blocks[index].text, source.blocks[index].text);
+        }
+        assert!(output.changes.iter().any(|change| {
+            change["field"] == "blocks[0].runs[0].text"
+                && change["original"] == " \u{a0}"
+                && change["value"] == ""
+                && change["source_nodes"]
+                    .as_array()
+                    .is_some_and(|nodes| !nodes.is_empty())
+        }));
+        assert_eq!(serde_json::to_string(&source).unwrap(), snapshot);
+        for profile in [Profile::Conservative, Profile::Balanced] {
+            assert_eq!(
+                prepare(&source, profile.settings()).ir.blocks[0].text,
+                source.blocks[0].text
+            );
+        }
+        let settings = Overrides {
+            trim_leading_spaces: Some(false),
+            ..Overrides::default()
+        }
+        .resolve(Profile::Aggressive);
+        assert_eq!(
+            prepare(&source, settings).ir.blocks[0].text,
+            source.blocks[0].text
+        );
+    }
+
     #[test]
     fn granular_overrides_take_precedence_and_preserve_other_styles() {
         let options = Overrides {

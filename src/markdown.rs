@@ -1,4 +1,5 @@
 use crate::model::{Block, Ir, Run};
+pub(crate) mod table;
 
 pub(crate) fn escape_text(value: &str) -> String {
     let mut output = String::new();
@@ -89,22 +90,6 @@ fn run_markdown(run: &Run) -> String {
     text
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn escapes_content_and_destinations_and_rejects_unsafe_links() {
-        let document = scraper::Html::parse_document("<div class='Article_Content'><p># 标题 [链接] *文本* &lt;script&gt; &amp;copy;</p><p><a href='https://example.org/a(b)?x=1&amp;y=2'>[名称]</a><a href='javascript:alert(1)'>保留文字</a><img src='data:text/html,bad'></p><p><span style='color:red'>[红字]</span></p></div>");
-        let ir = crate::parser::parse(&document, ".Article_Content", false, None).unwrap();
-        let output = super::render(&ir);
-        assert!(output.contains(r"\# 标题 \[链接\] \*文本\* &lt;script&gt; &amp;copy;"));
-        assert!(output.contains(r"[\[名称\]](<https://example.org/a(b)?x=1&amp;y=2>)"));
-        assert!(output.contains("保留文字"));
-        assert!(!output.contains("javascript:"));
-        assert!(!output.contains("data:text"));
-        assert!(output.contains("<span style=\"color:red\">[红字]</span>"));
-    }
-}
-
 fn block_markdown(block: &Block) -> String {
     let content = block.runs.iter().map(run_markdown).collect::<String>();
     match block.kind.as_str() {
@@ -134,7 +119,8 @@ fn block_markdown(block: &Block) -> String {
             .join("\n"),
         "heading" => format!("{} {content}", "#".repeat(block.heading_level())),
         "list_item" => format!("- {content}"),
-        "table" | "list" => crate::renderer::block_html(block),
+        "table" => table::html(block),
+        "list" => crate::renderer::block_html(block),
         _ => content,
     }
 }
@@ -215,50 +201,23 @@ fn editable_block(block: &Block) -> String {
             .join("\n");
     }
     if block.kind == "table" {
-        let columns = block.rows.first().map_or(0, Vec::len);
-        let simple = columns > 0
-            && block.rows[0].iter().all(|cell| cell.header)
-            && block.rows.iter().all(|row| {
-                row.len() == columns
-                    && row.iter().all(|cell| {
-                        cell.colspan == 1
-                            && cell.rowspan == 1
-                            && cell.blocks.iter().all(|b| b.kind == "paragraph")
-                    })
-            })
-            && block.rows.iter().skip(1).flatten().all(|cell| !cell.header);
-        if simple {
-            let mut rows = Vec::new();
-            if let Some(caption) = &block.caption {
-                rows.push(caption.iter().map(run_markdown).collect());
-                rows.push(String::new());
-            }
-            for (index, row) in block.rows.iter().enumerate() {
-                let cells = row
-                    .iter()
-                    .map(|cell| {
-                        let mut value = cell.runs.iter().map(run_markdown).collect::<String>();
-                        value.push_str(
-                            &cell
-                                .blocks
-                                .iter()
-                                .map(block_markdown)
-                                .collect::<Vec<_>>()
-                                .join("<br><br>"),
-                        );
-                        value
-                            .replace("\\|", "&#124;")
-                            .replace('|', "&#124;")
-                            .replace('\n', "<br>")
-                    })
-                    .collect::<Vec<_>>();
-                rows.push(format!("| {} |", cells.join(" | ")));
-                if index == 0 {
-                    rows.push(format!("| {} |", vec!["---"; columns].join(" | ")));
-                }
-            }
-            return rows.join("\n");
-        }
+        return table::render(block);
     }
     block_markdown(block)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn escapes_content_and_destinations_and_rejects_unsafe_links() {
+        let document = scraper::Html::parse_document("<div class='Article_Content'><p># 标题 [链接] *文本* &lt;script&gt; &amp;copy;</p><p><a href='https://example.org/a(b)?x=1&amp;y=2'>[名称]</a><a href='javascript:alert(1)'>保留文字</a><img src='data:text/html,bad'></p><p><span style='color:red'>[红字]</span></p></div>");
+        let ir = crate::parser::parse(&document, ".Article_Content", false, None).unwrap();
+        let output = super::render(&ir);
+        assert!(output.contains(r"\# 标题 \[链接\] \*文本\* &lt;script&gt; &amp;copy;"));
+        assert!(output.contains(r"[\[名称\]](<https://example.org/a(b)?x=1&amp;y=2>)"));
+        assert!(output.contains("保留文字"));
+        assert!(!output.contains("javascript:"));
+        assert!(!output.contains("data:text"));
+        assert!(output.contains("<span style=\"color:red\">[红字]</span>"));
+    }
 }

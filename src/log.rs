@@ -17,7 +17,7 @@ impl Logger {
     pub fn done(&self, blocks: usize, attachments: usize, images: usize) {
         self.stage(
             "done",
-            format!("完成：{blocks} blocks, {attachments} attachments, {images} images"),
+            format!("完成：{blocks} 个正文块，{attachments} 个附件，{images} 张图片"),
         );
     }
     pub fn warnings(&self, warnings: &[serde_json::Value]) {
@@ -32,7 +32,7 @@ impl Logger {
                 let detail = warning["error"]
                     .as_str()
                     .or_else(|| warning["reason"].as_str())
-                    .unwrap_or("记录见 report.json");
+                    .unwrap_or("详情请使用 --verbose");
                 eprintln!(
                     "[ue-weave][warning][{kind}] {detail} {}",
                     warning["url"].as_str().unwrap_or("")
@@ -40,7 +40,7 @@ impl Logger {
             }
         }
         eprintln!(
-            "[ue-weave][warnings] {} 条记录（{}）；报告：report.json",
+            "[ue-weave][warnings] {} 条记录（{}）；详情可使用 --verbose 查看",
             warnings.len(),
             counts
                 .iter()

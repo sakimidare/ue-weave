@@ -49,10 +49,8 @@ pub fn vml_dimension(element: scraper::ElementRef, property: &str) -> Option<Str
     let value = value.trim();
     let (number, factor) = if let Some(number) = value.strip_suffix("pt") {
         (number, 96.0 / 72.0)
-    } else if let Some(number) = value.strip_suffix("px") {
-        (number, 1.0)
     } else {
-        return None;
+        (value.strip_suffix("px")?, 1.0)
     };
     let pixels = number.trim().parse::<f64>().ok()? * factor;
     (pixels.is_finite() && pixels >= 0.0 && pixels <= u32::MAX as f64)

@@ -22,7 +22,7 @@ pub(crate) fn run_html(run: &Run) -> String {
             ] {
                 if let Some(value) = value {
                     if matches!(name, "width" | "height") && value.parse::<u32>().is_err() {
-                        if crate::safety::safe_css(value) {
+                        if crate::style_registry::value(name, value) {
                             dimensions.push(format!("{name}:{value}"));
                         }
                         continue;
@@ -88,7 +88,7 @@ pub(crate) fn run_html(run: &Run) -> String {
     styles.retain(|declaration| {
         declaration
             .split_once(':')
-            .is_some_and(|(_, value)| crate::safety::safe_css(value))
+            .is_some_and(|(property, value)| crate::style_registry::value(property, value))
     });
     if !styles.is_empty() {
         value = format!(
@@ -137,7 +137,7 @@ pub(crate) fn block_html(block: &Block) -> String {
                 attrs.push_str(" reversed");
             }
             if let Some(style) = &list.style {
-                if crate::safety::safe_css(style) {
+                if crate::style_registry::value("list-style-type", style) {
                     attrs.push_str(&format!(
                         " style=\"list-style-type:{}\"",
                         html_escape::encode_double_quoted_attribute(style)
@@ -167,8 +167,8 @@ pub(crate) fn block_html(block: &Block) -> String {
             .iter()
             .filter_map(|(key, evidence)| {
                 let value = evidence.value.as_str()?;
-                (crate::table::TABLE_STYLES.contains(&key.as_str())
-                    && crate::safety::safe_css(value))
+                (crate::style_registry::TABLE_STYLES.contains(&key.as_str())
+                    && crate::style_registry::value(key, value))
                 .then(|| format!("{key}:{value}"))
             })
             .collect::<Vec<_>>()
@@ -212,8 +212,8 @@ pub(crate) fn block_html(block: &Block) -> String {
                     .iter()
                     .filter_map(|(property, evidence)| {
                         let value = evidence.value.as_str()?;
-                        (crate::table::CELL_STYLES.contains(&property.as_str())
-                            && crate::safety::safe_css(value))
+                        (crate::style_registry::CELL_STYLES.contains(&property.as_str())
+                            && crate::style_registry::value(property, value))
                         .then(|| format!("{property}:{value}"))
                     })
                     .collect::<Vec<_>>()
@@ -247,9 +247,11 @@ pub(crate) fn block_html(block: &Block) -> String {
     } else {
         "p".into()
     };
-    let inferred = (block.indent.value == serde_json::Value::String("likely".into()))
-        .then_some(" data-inferred=\"text-indent\"")
-        .unwrap_or("");
+    let inferred = if block.indent.value == "likely" {
+        " data-inferred=\"text-indent\""
+    } else {
+        ""
+    };
     let mut styles = Vec::new();
     for (property, evidence) in &block.spacing {
         if let Some(value) = evidence.value.as_str() {

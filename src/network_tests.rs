@@ -48,6 +48,7 @@ const FAIL: &str =
     "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
 fn policy(retries: u8) -> Policy {
     Policy {
+        allow_private_network: true,
         retries,
         backoff: Duration::ZERO,
     }

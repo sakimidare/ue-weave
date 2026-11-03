@@ -7,6 +7,27 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[test]
+fn private_network_requires_explicit_option() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let dir = std::env::temp_dir().join(format!("ue-private-network-{}", std::process::id()));
+    let result = Command::new(env!("CARGO_BIN_EXE_ue-weave"))
+        .arg(format!("http://{}", listener.local_addr().unwrap()))
+        .arg("--output")
+        .arg(&dir)
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(!result.status.success());
+    let error: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(error["code"], "network_policy");
+    assert_eq!(
+        listener.accept().unwrap_err().kind(),
+        std::io::ErrorKind::WouldBlock
+    );
+}
+
 fn serve(responses: Vec<(u16, String)>) -> (String, thread::JoinHandle<usize>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
@@ -56,6 +77,8 @@ fn page_and_attachment_retry_and_local_config_use_same_pipeline() {
     fs::write(&config, r#"{"content":".body","title":"h1"}"#).unwrap();
     let result = Command::new(env!("CARGO_BIN_EXE_ue-weave"))
         .arg(&url)
+        .args(["--formats", "html,markdown,typst,json"])
+        .arg("--allow-private-network")
         .args([
             "--download-attachments",
             "--retries",
@@ -114,7 +137,15 @@ fn exhausted_retries_produce_structured_error() {
     let dir = std::env::temp_dir().join(format!("ue-http-error-{}", std::process::id()));
     let result = Command::new(env!("CARGO_BIN_EXE_ue-weave"))
         .arg(&url)
-        .args(["--retries", "1", "--timeout", "2", "--json", "--output"])
+        .args([
+            "--allow-private-network",
+            "--retries",
+            "1",
+            "--timeout",
+            "2",
+            "--json",
+            "--output",
+        ])
         .arg(&dir)
         .env("NO_PROXY", "127.0.0.1")
         .env("no_proxy", "127.0.0.1")

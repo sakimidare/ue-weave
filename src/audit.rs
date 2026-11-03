@@ -59,7 +59,15 @@ pub fn append_diagnostics(ir: &mut Ir) {
     for node in &ir.original_nodes {
         let id = &node["id"];
         let tag = node["tag"].as_str().unwrap_or("");
-        if matches!(tag, "span" | "div") && node["children"].as_array().is_some_and(Vec::is_empty) {
+        let attachment_node = ir.attachments.iter().any(|attachment| {
+            attachment["source_nodes"]
+                .as_array()
+                .is_some_and(|nodes| nodes.contains(id))
+        });
+        if matches!(tag, "span" | "div")
+            && node["children"].as_array().is_some_and(Vec::is_empty)
+            && !attachment_node
+        {
             ir.warnings.push(json!({"kind":"empty-element","original":{"tag":tag,"attrs":node["attrs"]},"removed":true,"ir_field":if tag == "div" {Some("blocks")} else {None},"inferred":false,"confidence":"high","reason":if tag == "div" {"空 div 规范化为空段落；原始节点保留"} else {"空 span 不产生文本片段；原始节点保留"},"source_nodes":[id]}));
         }
         if node["type"] == "text" {
@@ -78,7 +86,7 @@ pub fn append_diagnostics(ir: &mut Ir) {
                 }
             }
             if nbsp > 0 || text.starts_with("  ") {
-                ir.warnings.push(json!({"kind":"whitespace","original":text,"value":{"spaces":spaces,"nbsp":nbsp,"newlines":newlines},"removed":false,"ir_field":"runs.text","inferred":false,"confidence":"high","reason":"统计 DOM 解码后的空白；实体写法见 original.html","source_nodes":[id]}));
+                ir.warnings.push(json!({"kind":"whitespace","original":text,"value":{"spaces":spaces,"nbsp":nbsp,"newlines":newlines},"removed":false,"ir_field":"runs.text","inferred":false,"confidence":"high","reason":"统计 HTML 解码后的普通空格、不换行空格和换行数量","source_nodes":[id]}));
             }
         }
         if ["script", "style", "iframe", "object", "embed"].contains(&tag) {
@@ -164,7 +172,8 @@ pub fn append_diagnostics(ir: &mut Ir) {
                             ir.warnings.push(json!({"kind":"image-dimension","original":declaration,"value":value,"removed":!crate::safety::safe_css(value),"ir_field":"runs.image_attributes","inferred":false,"confidence":"high","reason":"图片 CSS 尺寸优先于 HTML 尺寸属性；保留原单位，导出时转换支持的长度","source_nodes":[id]}));
                             continue;
                         }
-                        if tag == "table" && crate::table::TABLE_STYLES.contains(&property.as_str())
+                        if tag == "table"
+                            && crate::style_registry::TABLE_STYLES.contains(&property.as_str())
                         {
                             ir.warnings.push(json!({"kind":"table-style","original":declaration,"value":value,"removed":!crate::safety::safe_css(value),"ir_field":"blocks.table_styles","inferred":false,"confidence":"high","reason":"表格声明写入 blocks.table_styles；HTML 过滤无效值，Typst 按已支持的属性导出","source_nodes":[id]}));
                             continue;
@@ -191,7 +200,7 @@ pub fn append_diagnostics(ir: &mut Ir) {
                             continue;
                         }
                         if ["td", "th"].contains(&tag)
-                            && crate::table::CELL_STYLES.contains(&property.as_str())
+                            && crate::style_registry::CELL_STYLES.contains(&property.as_str())
                         {
                             let safe = crate::safety::safe_css(value.trim());
                             ir.warnings.push(json!({"kind":"cell-style","attribute":property,"original":value.trim(),"removed":!safe,"ir_field":"rows.styles","inferred":false,"confidence":"high","reason":"单元格声明写入 rows.styles；HTML 过滤无效值，Typst 按已支持的属性导出","source_nodes":[id]}));
@@ -201,22 +210,11 @@ pub fn append_diagnostics(ir: &mut Ir) {
                             ir.warnings.push(json!({"kind":"word-style-mapping","attribute":property,"original":value.trim(),"value":mapped,"removed":true,"ir_field":target,"inferred":false,"confidence":"high","reason":"依据 UEditor filterword.js 的声明映射；现存标准 CSS 声明优先","source_nodes":[id]}));
                             continue;
                         }
-                        if ![
-                            "font-weight",
-                            "font-style",
-                            "text-decoration",
-                            "font-family",
-                            "font-size",
-                            "color",
-                            "background-color",
-                            "background",
-                            "vertical-align",
-                            "text-indent",
-                            "text-align",
-                            "line-height",
-                        ]
-                        .contains(&property.as_str())
-                        {
+                        if let Some(mapping) = crate::style_registry::common(&property) {
+                            ir.metadata
+                                .entry("style_mappings")
+                                .or_insert_with(|| json!({}))[&property] = json!(mapping.ir_field);
+                        } else {
                             ir.warnings.push(json!({"kind":"unmapped-style","attribute":property,"original":value.trim(),"removed":true,"ir_field":null,"inferred":false,"confidence":"high","reason":"该声明写入 original_nodes.attrs.style，IR 格式映射待实现","source_nodes":[id]}));
                         }
                     }

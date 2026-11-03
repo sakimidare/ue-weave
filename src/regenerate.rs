@@ -3,6 +3,7 @@ use crate::{
     error::{RecoverError, Result},
     model::Ir,
 };
+use sha2::{Digest, Sha256};
 use std::{
     fs,
     path::{Component, Path},
@@ -22,33 +23,23 @@ fn write(path: &Path, bytes: &[u8]) -> Result<()> {
     })
 }
 
-pub fn run(
-    path: &Path,
-    output: &Path,
-    json: bool,
-    verbose: bool,
-    profile: crate::profile::Profile,
-    settings: crate::profile::Settings,
-) -> Result<()> {
+pub fn run(path: &Path, args: &crate::Args) -> Result<()> {
+    let output = &args.output;
+    let json = args.json;
+    let verbose = args.verbose;
+    let profile = args.profile;
+    let settings = args.output_options.resolve(profile);
+    let asset_root = args.asset_root.as_deref();
+    let exports = &args.exports;
     let logger = crate::log::Logger::new(verbose);
     logger.stage("input-ir", format!("读取 {}", path.display()));
-    let mut ir: Ir =
-        serde_json::from_slice(&read(path)?).map_err(|source| RecoverError::ReadIr {
-            path: path.into(),
-            source,
-        })?;
+    let mut ir: Ir = crate::ir_format::read(&read(path)?, path)?;
     let directory = path.parent().unwrap_or(Path::new("."));
-    // Read required provenance before writing any output.
-    let original = read(&directory.join("original.html"))?;
-    let mut files = vec![("original.html".to_string(), original)];
-    for name in ["source.bin", "source.html"] {
-        if directory.join(name).is_file() {
-            files.push((name.into(), read(&directory.join(name))?));
-        }
-    }
+    let mut files = Vec::new();
+    let resource_directory = asset_root.unwrap_or(directory);
     let canonical_directory =
-        fs::canonicalize(directory).map_err(|source| RecoverError::ReadInput {
-            path: directory.into(),
+        fs::canonicalize(resource_directory).map_err(|source| RecoverError::ReadInput {
+            path: resource_directory.into(),
             source,
         })?;
     for asset in ir.attachments.iter_mut().chain(&mut ir.images) {
@@ -73,7 +64,7 @@ pub fn run(
                 "IR 资源路径超出 attachments/ 和 images/：{local}"
             )));
         }
-        let source_path = directory.join(relative);
+        let source_path = resource_directory.join(relative);
         let canonical =
             fs::canonicalize(&source_path).map_err(|source| RecoverError::ReadInput {
                 path: source_path.clone(),
@@ -85,45 +76,27 @@ pub fn run(
             )));
         }
         let relative = relative.to_string_lossy().into_owned();
-        files.push((relative.clone(), read(&canonical)?));
+        let bytes = read(&canonical)?;
+        if let Some(expected) = asset["download"]["sha256"].as_str() {
+            if format!("{:x}", Sha256::digest(&bytes)) != expected {
+                return Err(RecoverError::InvalidIr {
+                    field: format!("assets.{relative}.download.sha256"),
+                    reason: "资源内容与记录的 SHA-256 不一致；请核对文件和资源记录".into(),
+                });
+            }
+        }
+        files.push((relative.clone(), bytes));
         asset["local_path"] = relative.into();
     }
-    let report = serde_json::json!({"mode":"regenerate","source":ir.source,"warnings":ir.warnings,"counts":{"blocks":ir.blocks.len(),"total_blocks":ir.blocks.iter().map(crate::model::Block::block_count).sum::<usize>(),"attachments":ir.attachments.len(),"images":ir.images.len()},"note":"根据编辑后的 IR 导出；来源记录沿用原报告"});
-    let rendered = crate::profile::prepare(&ir, settings);
-    let documents = crate::export::render(&rendered.ir, settings);
-    let mut report = report;
-    report["output_profile"] = serde_json::json!(profile);
-    report["output_options"] = serde_json::json!(settings);
-    report["output_changes"] = serde_json::json!(rendered.changes);
-    for (name, value) in [
-        (
-            "reconstructed.json",
-            serde_json::to_value(&ir).map_err(|source| RecoverError::Serialize {
-                file: "reconstructed.json".into(),
-                source,
-            })?,
-        ),
-        ("report.json", report.clone()),
-    ] {
-        files.push((
-            name.into(),
-            serde_json::to_vec_pretty(&value).map_err(|source| RecoverError::Serialize {
-                file: name.into(),
-                source,
-            })?,
-        ));
-    }
-    files.extend([
-        ("reconstructed.html".into(), documents.html.into_bytes()),
-        ("reconstructed.md".into(), documents.markdown.into_bytes()),
-        ("reconstructed.typ".into(), documents.typst.into_bytes()),
-    ]);
+    let rendered = crate::profile::prepare_documents(&ir, settings);
+    let documents = crate::export::render(&rendered.ir, settings, exports);
+    files.extend(exports.files(documents, &ir)?);
     fs::create_dir_all(output).map_err(|source| RecoverError::CreateOutput {
         path: output.into(),
         source,
     })?;
     for (name, bytes) in files {
-        let target = output.join(name);
+        let target = output.join(&name);
         let parent = target.parent().expect("output file parent");
         fs::create_dir_all(parent).map_err(|source| RecoverError::CreateOutput {
             path: parent.into(),
@@ -138,7 +111,10 @@ pub fn run(
         ir.images.len(),
     );
     if json {
-        println!("{report}");
+        println!(
+            "{}",
+            serde_json::json!({"status":"ok", "source":ir.source, "warnings":ir.warnings, "output_profile":profile,"output_options":settings,"counts":{"blocks":ir.blocks.len(),"attachments":ir.attachments.len(),"images":ir.images.len()}})
+        );
     }
     Ok(())
 }
