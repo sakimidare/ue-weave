@@ -4,7 +4,7 @@ fn escape(text: &str) -> String {
     format!("#text({})", quoted(text))
 }
 
-fn quoted(text: &str) -> String {
+pub(crate) fn quoted(text: &str) -> String {
     format!(
         "\"{}\"",
         text.replace('\\', "\\\\")

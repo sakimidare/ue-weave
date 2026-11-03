@@ -70,7 +70,7 @@ pub fn run(
             || !matches!(relative.components().next(), Some(Component::Normal(name)) if name == "attachments" || name == "images")
         {
             return Err(RecoverError::Arguments(format!(
-                "IR 资源路径必须位于 attachments/ 或 images/：{local}"
+                "IR 资源路径超出 attachments/ 和 images/：{local}"
             )));
         }
         let source_path = directory.join(relative);
@@ -88,8 +88,9 @@ pub fn run(
         files.push((relative.clone(), read(&canonical)?));
         asset["local_path"] = relative.into();
     }
-    let report = serde_json::json!({"mode":"regenerate","source":ir.source,"warnings":ir.warnings,"counts":{"blocks":ir.blocks.len(),"total_blocks":ir.blocks.iter().map(crate::model::Block::block_count).sum::<usize>(),"attachments":ir.attachments.len(),"images":ir.images.len()},"note":"使用编辑后的 IR 重建；原始快照保持原样，原还原警告作为来源记录保留"});
+    let report = serde_json::json!({"mode":"regenerate","source":ir.source,"warnings":ir.warnings,"counts":{"blocks":ir.blocks.len(),"total_blocks":ir.blocks.iter().map(crate::model::Block::block_count).sum::<usize>(),"attachments":ir.attachments.len(),"images":ir.images.len()},"note":"根据编辑后的 IR 导出；来源记录沿用原报告"});
     let rendered = crate::profile::prepare(&ir, settings);
+    let documents = crate::export::render(&rendered.ir, settings);
     let mut report = report;
     report["output_profile"] = serde_json::json!(profile);
     report["output_options"] = serde_json::json!(settings);
@@ -113,23 +114,9 @@ pub fn run(
         ));
     }
     files.extend([
-        (
-            "reconstructed.html".into(),
-            crate::renderer::render(&rendered.ir).into_bytes(),
-        ),
-        (
-            "reconstructed.md".into(),
-            if settings.native_markdown {
-                crate::markdown::render_editable(&rendered.ir)
-            } else {
-                crate::markdown::render(&rendered.ir)
-            }
-            .into_bytes(),
-        ),
-        (
-            "reconstructed.typ".into(),
-            crate::typst::render(&rendered.ir).into_bytes(),
-        ),
+        ("reconstructed.html".into(), documents.html.into_bytes()),
+        ("reconstructed.md".into(), documents.markdown.into_bytes()),
+        ("reconstructed.typ".into(), documents.typst.into_bytes()),
     ]);
     fs::create_dir_all(output).map_err(|source| RecoverError::CreateOutput {
         path: output.into(),

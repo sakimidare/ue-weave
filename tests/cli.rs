@@ -1,6 +1,82 @@
 use std::{fs, process::Command};
 
 #[test]
+fn metadata_header_is_optional_and_regenerates_from_edited_ir() {
+    let dir = std::env::temp_dir().join(format!("ue-metadata-{}", std::process::id()));
+    for (name, options) in [
+        ("default", vec![]),
+        ("enabled", vec!["--include-metadata"]),
+        ("disabled", vec!["--include-metadata=false"]),
+    ] {
+        let result = Command::new(env!("CARGO_BIN_EXE_ue-weave"))
+            .args([
+                "--input",
+                "fixtures/webplus-college.html",
+                "--profile",
+                "aggressive",
+                "--output",
+            ])
+            .arg(dir.join(name))
+            .args(options)
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+    }
+    for file in ["reconstructed.json", "original.html", "source.bin"] {
+        assert_eq!(
+            fs::read(dir.join("default").join(file)).unwrap(),
+            fs::read(dir.join("enabled").join(file)).unwrap()
+        );
+    }
+    for file in [
+        "reconstructed.html",
+        "reconstructed.md",
+        "reconstructed.typ",
+    ] {
+        let default = fs::read_to_string(dir.join("default").join(file)).unwrap();
+        let enabled = fs::read_to_string(dir.join("enabled").join(file)).unwrap();
+        assert_eq!(
+            default,
+            fs::read_to_string(dir.join("disabled").join(file)).unwrap()
+        );
+        assert!(enabled.ends_with(&default));
+        assert!(enabled.find("学院新闻").unwrap() < enabled.find("活动安排").unwrap());
+        assert!(enabled.contains("发布者：管理员"));
+        assert!(!enabled.contains("作者："));
+    }
+    let path = dir.join("enabled/reconstructed.json");
+    let mut ir: serde_json::Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+    ir["metadata"]["title"] = "编辑后的标题".into();
+    ir["metadata"]["author"] = "张三".into();
+    fs::write(&path, serde_json::to_vec(&ir).unwrap()).unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_ue-weave"))
+        .arg("--input-ir")
+        .arg(path)
+        .args(["--include-metadata", "--output"])
+        .arg(dir.join("edited"))
+        .output()
+        .unwrap();
+    assert!(result.status.success());
+    for file in [
+        "reconstructed.html",
+        "reconstructed.md",
+        "reconstructed.typ",
+    ] {
+        let text = fs::read_to_string(dir.join("edited").join(file)).unwrap();
+        assert_eq!(text.matches("编辑后的标题").count(), 1);
+        assert!(text.contains("作者：张三"));
+    }
+    let report: serde_json::Value =
+        serde_json::from_slice(&fs::read(dir.join("edited/report.json")).unwrap()).unwrap();
+    assert_eq!(report["output_options"]["include_metadata"], true);
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn site_config_overrides_defaults_and_validates_input() {
     let dir = std::env::temp_dir().join(format!("ue-site-config-{}", std::process::id()));
     fs::create_dir_all(&dir).unwrap();
@@ -13,7 +89,7 @@ fn site_config_overrides_defaults_and_validates_input() {
     )
     .unwrap();
     let run = |extra: &[&str]| {
-        Command::new(env!("CARGO_BIN_EXE_ue-recover"))
+        Command::new(env!("CARGO_BIN_EXE_ue-weave"))
             .arg("--input")
             .arg(&html)
             .arg("--site-config")
@@ -86,7 +162,7 @@ fn site_config_overrides_defaults_and_validates_input() {
 #[test]
 fn webplus_auto_selection_and_snapshot() {
     let dir = std::env::temp_dir().join(format!("ue-webplus-{}", std::process::id()));
-    let output = Command::new(env!("CARGO_BIN_EXE_ue-recover"))
+    let output = Command::new(env!("CARGO_BIN_EXE_ue-weave"))
         .args(["--input", "fixtures/webplus-college.html", "--output"])
         .arg(&dir)
         .arg("--json")
@@ -109,7 +185,7 @@ fn webplus_auto_selection_and_snapshot() {
     let raw = fs::read_to_string(dir.join("original.html")).unwrap();
     assert!(raw.contains("正文&nbsp;内容"));
     assert!(!raw.contains("arti_metas"));
-    let explicit = Command::new(env!("CARGO_BIN_EXE_ue-recover"))
+    let explicit = Command::new(env!("CARGO_BIN_EXE_ue-weave"))
         .args([
             "--input",
             "fixtures/webplus-college.html",
@@ -128,7 +204,7 @@ fn webplus_auto_selection_and_snapshot() {
 fn output_profiles_and_overrides_preserve_canonical_ir() {
     let base = std::env::temp_dir().join(format!("ue-profiles-{}", std::process::id()));
     for profile in ["conservative", "balanced", "aggressive"] {
-        let output = Command::new(env!("CARGO_BIN_EXE_ue-recover"))
+        let output = Command::new(env!("CARGO_BIN_EXE_ue-weave"))
             .args([
                 "--input",
                 "fixtures/output-profiles.html",
@@ -174,7 +250,7 @@ fn output_profiles_and_overrides_preserve_canonical_ir() {
     assert!(md.contains("| 名称 | 内容 |"));
     assert!(md.contains("A&#124;B"));
     assert!(md.contains("colspan=\"2\""));
-    let result = Command::new(env!("CARGO_BIN_EXE_ue-recover"))
+    let result = Command::new(env!("CARGO_BIN_EXE_ue-weave"))
         .arg("--input-ir")
         .arg(base.join("conservative/reconstructed.json"))
         .args([
@@ -206,7 +282,7 @@ fn edited_ir_regenerates_with_original_snapshot_and_assets() {
     let directory = std::env::temp_dir().join(format!("ue-ir-edit-{}", std::process::id()));
     let source = directory.join("source");
     let target = directory.join("edited");
-    let result = Command::new(env!("CARGO_BIN_EXE_ue-recover"))
+    let result = Command::new(env!("CARGO_BIN_EXE_ue-weave"))
         .args(["--input", "fixtures/list-values.html", "--output"])
         .arg(&source)
         .output()
@@ -219,7 +295,7 @@ fn edited_ir_regenerates_with_original_snapshot_and_assets() {
     fs::write(source.join("attachments/test.txt"), "附件内容").unwrap();
     ir["attachments"] = serde_json::json!([{"local_path":source.join("attachments/test.txt")}]);
     fs::write(&path, serde_json::to_vec(&ir).unwrap()).unwrap();
-    let result = Command::new(env!("CARGO_BIN_EXE_ue-recover"))
+    let result = Command::new(env!("CARGO_BIN_EXE_ue-weave"))
         .arg("--input-ir")
         .arg(&path)
         .arg("--output")
@@ -256,7 +332,7 @@ fn edited_ir_regenerates_with_original_snapshot_and_assets() {
             .contains("编辑后的内容"));
     }
     fs::write(&path, "{broken").unwrap();
-    let result = Command::new(env!("CARGO_BIN_EXE_ue-recover"))
+    let result = Command::new(env!("CARGO_BIN_EXE_ue-weave"))
         .arg("--input-ir")
         .arg(&path)
         .arg("--output")
@@ -277,7 +353,7 @@ fn distinguishes_selector_errors_and_preserves_input_on_failure() {
         ("[", "invalid_selector"),
         (".missing-article", "content_not_found"),
     ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_ue-recover"))
+        let output = Command::new(env!("CARGO_BIN_EXE_ue-weave"))
             .args(["--input", "fixtures/table-spans.html", "--output"])
             .arg(&directory)
             .args(["--selector", selector, "--json"])
@@ -304,7 +380,7 @@ fn json_stdout_and_full_source_snapshot() {
             .unwrap()
             .as_nanos()
     ));
-    let output = Command::new(env!("CARGO_BIN_EXE_ue-recover"))
+    let output = Command::new(env!("CARGO_BIN_EXE_ue-weave"))
         .args(["--input", "fixtures/table-spans.html", "--output"])
         .arg(&output_dir)
         .args(["--json", "--verbose", "--keep-raw"])
@@ -313,7 +389,7 @@ fn json_stdout_and_full_source_snapshot() {
     assert!(output.status.success());
     let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     assert_eq!(report["counts"]["blocks"], 1);
-    assert!(String::from_utf8_lossy(&output.stderr).contains("[ue-recover][done]"));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("[ue-weave][done]"));
     assert_eq!(
         fs::read(output_dir.join("source.html")).unwrap(),
         fs::read("fixtures/table-spans.html").unwrap()
@@ -328,7 +404,7 @@ fn json_stdout_and_full_source_snapshot() {
 
 #[test]
 fn missing_input_emits_json_error_and_failure_exit() {
-    let output = Command::new(env!("CARGO_BIN_EXE_ue-recover"))
+    let output = Command::new(env!("CARGO_BIN_EXE_ue-weave"))
         .args(["--output", "/tmp/ue-unused-output", "--json"])
         .output()
         .unwrap();

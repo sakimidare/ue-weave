@@ -18,7 +18,7 @@ pub fn annotate(ir: &mut Ir, disabled: bool) {
         .map(|node| node["id"].clone())
         .collect();
     let likely = !disabled && !word_nodes.is_empty();
-    let evidence = json!({"value":if likely {"likely"} else {"unknown"},"confidence":if likely {"medium"} else {"unknown"},"reason":if disabled {"推断已关闭"} else if likely {"存在 Mso 类、mso 样式或 Office 命名空间；这些标记支持 Word 来源判断，但不能证明编辑历史"} else {"未发现 Word 标记；过滤可能已移除这些标记"},"source_nodes":word_nodes});
+    let evidence = json!({"value":if likely {"likely"} else {"unknown"},"confidence":if likely {"medium"} else {"unknown"},"reason":if disabled {"推断已关闭"} else if likely {"检测到 Mso 类、mso 样式或 Office 命名空间，据此推断 Word 来源"} else {"未检测到 Word 来源标记，来源记为 unknown"},"source_nodes":word_nodes});
     ir.metadata.insert("word_origin".into(), evidence.clone());
     ir.warnings
         .push(json!({"kind":"word-origin","evidence":evidence,"source_nodes":word_nodes}));
@@ -88,7 +88,7 @@ fn empty_paragraphs(block: &Block, disabled: bool, warnings: &mut Vec<Value>) {
         })
     {
         let likely = !disabled && block.runs.iter().any(|r| r.line_break);
-        warnings.push(json!({"kind":"empty-paragraph","original":block.raw_html,"removed":false,"ir_field":"blocks","inferred":likely,"value":if likely {"likely-editor-placeholder"} else {"unknown"},"confidence":if likely {"low"} else {"unknown"},"reason":if likely {"空段落含 br，与编辑器占位结构一致；也可能是作者有意留白"} else {"段落没有可见文字；保留空段落，生成原因无法确认"},"source_nodes":block.source_nodes}));
+        warnings.push(json!({"kind":"empty-paragraph","original":block.raw_html,"removed":false,"ir_field":"blocks","inferred":likely,"value":if likely {"likely-editor-placeholder"} else {"unknown"},"confidence":if likely {"low"} else {"unknown"},"reason":if likely {"空段落含 br，按编辑器占位结构作低置信度推断"} else {"段落无可见文字，记录为空段落；生成原因记为 unknown"},"source_nodes":block.source_nodes}));
     }
     for child in &block.children {
         empty_paragraphs(child, disabled, warnings);

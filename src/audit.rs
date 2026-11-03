@@ -54,7 +54,7 @@ pub fn append_diagnostics(ir: &mut Ir) {
         "original_paragraph_spacing",
         "original_page_setup",
     ] {
-        ir.warnings.push(json!({"kind":"unrecoverable","field":field,"value":"unknown","confidence":"unknown","reason":"最终 HTML 无法证明原始文档中该属性的值","source_nodes":[]}));
+        ir.warnings.push(json!({"kind":"unrecoverable","field":field,"value":"unknown","confidence":"unknown","reason":"HTML 未记录此原始文档属性，值记为 unknown","source_nodes":[]}));
     }
     for node in &ir.original_nodes {
         let id = &node["id"];
@@ -74,11 +74,11 @@ pub fn append_diagnostics(ir: &mut Ir) {
             for (character, codepoint) in [('\u{200b}', "U+200B"), ('\u{feff}', "U+FEFF")] {
                 let count = text.chars().filter(|c| *c == character).count();
                 if count > 0 {
-                    ir.warnings.push(json!({"kind":"possible-editor-fill-character","original":text,"value":{"codepoint":codepoint,"count":count,"origin":"unknown"},"removed":false,"ir_field":"runs.text","inferred":false,"confidence":"unknown","reason":"UEditor domUtils.fillChar 使用 U+200B，IE6 使用 U+FEFF；字符也可能属于作者内容，无法确认来源，保留原字符","source_nodes":[id]}));
+                    ir.warnings.push(json!({"kind":"possible-editor-fill-character","original":text,"value":{"codepoint":codepoint,"count":count,"origin":"unknown"},"removed":false,"ir_field":"runs.text","inferred":false,"confidence":"unknown","reason":"检测到 UEditor 填充字符 U+200B 或 U+FEFF；字符写入 runs.text，来源记为 unknown","source_nodes":[id]}));
                 }
             }
             if nbsp > 0 || text.starts_with("  ") {
-                ir.warnings.push(json!({"kind":"whitespace","original":text,"value":{"spaces":spaces,"nbsp":nbsp,"newlines":newlines},"removed":false,"ir_field":"runs.text","inferred":false,"confidence":"high","reason":"DOM 解码后的空白计数；实体原始写法需要查阅输入快照","source_nodes":[id]}));
+                ir.warnings.push(json!({"kind":"whitespace","original":text,"value":{"spaces":spaces,"nbsp":nbsp,"newlines":newlines},"removed":false,"ir_field":"runs.text","inferred":false,"confidence":"high","reason":"统计 DOM 解码后的空白；实体写法见 original.html","source_nodes":[id]}));
             }
         }
         if ["script", "style", "iframe", "object", "embed"].contains(&tag) {
@@ -88,7 +88,7 @@ pub fn append_diagnostics(ir: &mut Ir) {
             && !mapped_element(tag)
             && !["script", "style", "iframe", "object", "embed"].contains(&tag)
         {
-            ir.warnings.push(json!({"kind":"unsupported-structure","original":{"tag":tag,"attrs":node["attrs"]},"value":"partial","removed":true,"ir_field":"original_nodes","inferred":false,"confidence":"high","reason":"此标签的完整语义尚未映射到编辑模型；重建时处理可识别子内容，容器、交互行为或专有结构仅保存在原始快照中","source_nodes":[id]}));
+            ir.warnings.push(json!({"kind":"unsupported-structure","original":{"tag":tag,"attrs":node["attrs"]},"value":"partial","removed":true,"ir_field":"original_nodes","inferred":false,"confidence":"high","reason":"重建已支持的子内容；标签完整结构记录在 original_nodes，容器语义映射待实现","source_nodes":[id]}));
         }
         if let Some(attrs) = node["attrs"].as_object() {
             if ["ol", "ul"].contains(&tag) {
@@ -97,7 +97,7 @@ pub fn append_diagnostics(ir: &mut Ir) {
                         .split_whitespace()
                         .filter(|class| class.starts_with("custom_"))
                     {
-                        ir.warnings.push(json!({"kind":"custom-list-marker","original":marker,"value":"unknown","removed":true,"ir_field":"blocks.list.custom_style","inferred":false,"confidence":"unknown","reason":"UEditor 自定义标记依赖外部 GIF 图标和展示样式；保留类型及原始类名，导出使用基础列表，标记外观尚未还原","source_nodes":[id]}));
+                        ir.warnings.push(json!({"kind":"custom-list-marker","original":marker,"value":"unknown","removed":true,"ir_field":"blocks.list.custom_style","inferred":false,"confidence":"unknown","reason":"自定义列表类型和类名已写入 IR；导出基础列表，外部 GIF 标记外观记为 unknown","source_nodes":[id]}));
                     }
                 }
                 let unsupported =
@@ -126,7 +126,7 @@ pub fn append_diagnostics(ir: &mut Ir) {
                             })
                         });
                 if unsupported {
-                    ir.warnings.push(json!({"kind":"export-limitation","format":"typst","original":attrs,"confidence":"high","reason":"此自定义列表标记尚无 Typst 映射；IR 与 HTML 保留原声明","source_nodes":[id]}));
+                    ir.warnings.push(json!({"kind":"export-limitation","format":"typst","original":attrs,"confidence":"high","reason":"自定义列表标记已写入 IR 和 HTML；Typst 映射待实现","source_nodes":[id]}));
                 }
             }
             for (name, value) in attrs {
@@ -152,7 +152,7 @@ pub fn append_diagnostics(ir: &mut Ir) {
                             continue;
                         }
                         let Some((property, raw_value)) = normalized.split_once(':') else {
-                            ir.warnings.push(json!({"kind":"malformed-style","original":declaration,"removed":true,"ir_field":null,"inferred":false,"confidence":"high","reason":"声明缺少属性和值的分隔符，保留原始节点供核对","source_nodes":[id]}));
+                            ir.warnings.push(json!({"kind":"malformed-style","original":declaration,"removed":true,"ir_field":null,"inferred":false,"confidence":"high","reason":"CSS 声明缺少冒号，已跳过；原值见 original_nodes","source_nodes":[id]}));
                             continue;
                         };
                         let (value, important) = crate::css::value_priority(raw_value);
@@ -166,7 +166,7 @@ pub fn append_diagnostics(ir: &mut Ir) {
                         }
                         if tag == "table" && crate::table::TABLE_STYLES.contains(&property.as_str())
                         {
-                            ir.warnings.push(json!({"kind":"table-style","original":declaration,"value":value,"removed":!crate::safety::safe_css(value),"ir_field":"blocks.table_styles","inferred":false,"confidence":"high","reason":"保留显式表格声明；HTML 输出进行安全过滤，Typst 表格整体样式映射仍有限","source_nodes":[id]}));
+                            ir.warnings.push(json!({"kind":"table-style","original":declaration,"value":value,"removed":!crate::safety::safe_css(value),"ir_field":"blocks.table_styles","inferred":false,"confidence":"high","reason":"表格声明写入 blocks.table_styles；HTML 过滤无效值，Typst 按已支持的属性导出","source_nodes":[id]}));
                             continue;
                         }
                         if matches!(tag, "col" | "colgroup") && property == "width" {
@@ -181,20 +181,20 @@ pub fn append_diagnostics(ir: &mut Ir) {
                         if ["p", "div", "h1", "h2", "h3", "h4", "h5", "h6"].contains(&tag)
                             && property == "margin"
                         {
-                            ir.warnings.push(json!({"kind":"paragraph-margin-shorthand","original":declaration,"removed":true,"ir_field":"blocks.spacing","inferred":false,"confidence":"high","reason":"解析简写并按优先级保存段前、段后间距；左右外边距尚未映射，完整声明保存在快照中","source_nodes":[id]}));
+                            ir.warnings.push(json!({"kind":"paragraph-margin-shorthand","original":declaration,"removed":true,"ir_field":"blocks.spacing","inferred":false,"confidence":"high","reason":"展开 margin 简写，段前、段后间距写入 blocks.spacing；左右外边距记录在原始节点中","source_nodes":[id]}));
                             continue;
                         }
                         if ["p", "div", "h1", "h2", "h3", "h4", "h5", "h6"].contains(&tag)
                             && ["margin-top", "margin-bottom"].contains(&property.as_str())
                         {
-                            ir.warnings.push(json!({"kind":"paragraph-spacing","original":value.trim(),"attribute":property,"removed":!crate::safety::safe_css(value.trim()),"ir_field":"blocks.spacing","inferred":false,"confidence":"high","reason":"保留最终 HTML 声明；原始 Word 段落间距仍无法确定","source_nodes":[id]}));
+                            ir.warnings.push(json!({"kind":"paragraph-spacing","original":value.trim(),"attribute":property,"removed":!crate::safety::safe_css(value.trim()),"ir_field":"blocks.spacing","inferred":false,"confidence":"high","reason":"将 HTML 段落间距声明写入 blocks.spacing","source_nodes":[id]}));
                             continue;
                         }
                         if ["td", "th"].contains(&tag)
                             && crate::table::CELL_STYLES.contains(&property.as_str())
                         {
                             let safe = crate::safety::safe_css(value.trim());
-                            ir.warnings.push(json!({"kind":"cell-style","attribute":property,"original":value.trim(),"removed":!safe,"ir_field":"rows.styles","inferred":false,"confidence":"high","reason":"单元格声明保留在 IR；HTML 输出进行安全过滤，Typst 单元格格式映射仍有限","source_nodes":[id]}));
+                            ir.warnings.push(json!({"kind":"cell-style","attribute":property,"original":value.trim(),"removed":!safe,"ir_field":"rows.styles","inferred":false,"confidence":"high","reason":"单元格声明写入 rows.styles；HTML 过滤无效值，Typst 按已支持的属性导出","source_nodes":[id]}));
                             continue;
                         }
                         if let Some((target, mapped)) = crate::word::declaration(&property, value) {
@@ -217,7 +217,7 @@ pub fn append_diagnostics(ir: &mut Ir) {
                         ]
                         .contains(&property.as_str())
                         {
-                            ir.warnings.push(json!({"kind":"unmapped-style","attribute":property,"original":value.trim(),"removed":true,"ir_field":null,"inferred":false,"confidence":"high","reason":"该声明仅保存在原始节点中，尚未映射到编辑模型","source_nodes":[id]}));
+                            ir.warnings.push(json!({"kind":"unmapped-style","attribute":property,"original":value.trim(),"removed":true,"ir_field":null,"inferred":false,"confidence":"high","reason":"该声明写入 original_nodes.attrs.style，IR 格式映射待实现","source_nodes":[id]}));
                         }
                     }
                 }

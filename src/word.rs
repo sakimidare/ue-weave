@@ -30,9 +30,9 @@ pub fn paragraph_structure(
         if disabled {
             "推断已关闭；原始 Word 结构标记保留在节点快照中"
         } else if list {
-            "存在 MsoListParagraph 或 mso-list 声明；UEditor 可选 autoTransWordToList 会转换此类段落，当前保留标记文本和段落顺序，列表分组与层级尚无法确认"
+            "检测到 MsoListParagraph 或 mso-list；记录列表标记和段落顺序，分组与层级记为 unknown"
         } else {
-            "存在 MsoHeading 类名；filterWord 会将此类内容转为加粗段落，原始标题层级无法确认"
+            "检测到 MsoHeading；filterWord 将此类内容转为加粗段落，原始标题层级记为 unknown"
         },
         source,
     ))

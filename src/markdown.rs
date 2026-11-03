@@ -1,6 +1,6 @@
 use crate::model::{Block, Ir, Run};
 
-fn escape_text(value: &str) -> String {
+pub(crate) fn escape_text(value: &str) -> String {
     let mut output = String::new();
     for ch in value.chars() {
         match ch {

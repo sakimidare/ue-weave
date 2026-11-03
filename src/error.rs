@@ -35,9 +35,7 @@ pub enum RecoverError {
     },
     #[error("CSS 选择器无效：{selector}")]
     InvalidSelector { selector: String },
-    #[error(
-        "正文选择器未找到：{selector}。请确认页面是文章详情页，或使用 --selector 指定正文容器"
-    )]
+    #[error("正文选择器未找到：{selector}。可使用 --selector content=CSS 指定正文容器")]
     ContentNotFound { selector: String },
     #[error("创建输出目录失败：{path}: {source}")]
     CreateOutput {
@@ -75,7 +73,7 @@ pub enum AssetError {
         #[source]
         source: io::Error,
     },
-    #[error("无法分配资源文件名")]
+    #[error("资源文件名冲突次数达到上限")]
     NameExhausted,
 }
 

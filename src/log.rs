@@ -4,17 +4,14 @@ pub struct Logger {
 
 impl Logger {
     pub fn retry(&self, error: &crate::error::NetworkError, delay: std::time::Duration) {
-        eprintln!(
-            "[ue-recover][retry] {error}；{}ms 后重试",
-            delay.as_millis()
-        );
+        eprintln!("[ue-weave][retry] {error}；{}ms 后重试", delay.as_millis());
     }
     pub fn new(verbose: bool) -> Self {
         Self { verbose }
     }
     pub fn stage(&self, name: &str, message: impl AsRef<str>) {
         if self.verbose {
-            eprintln!("[ue-recover][{name}] {}", message.as_ref());
+            eprintln!("[ue-weave][{name}] {}", message.as_ref());
         }
     }
     pub fn done(&self, blocks: usize, attachments: usize, images: usize) {
@@ -35,15 +32,15 @@ impl Logger {
                 let detail = warning["error"]
                     .as_str()
                     .or_else(|| warning["reason"].as_str())
-                    .unwrap_or("详见 report.json");
+                    .unwrap_or("记录见 report.json");
                 eprintln!(
-                    "[ue-recover][warning][{kind}] {detail} {}",
+                    "[ue-weave][warning][{kind}] {detail} {}",
                     warning["url"].as_str().unwrap_or("")
                 );
             }
         }
         eprintln!(
-            "[ue-recover][warnings] {} 条记录（{}）；详见 report.json",
+            "[ue-weave][warnings] {} 条记录（{}）；报告：report.json",
             warnings.len(),
             counts
                 .iter()

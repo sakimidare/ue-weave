@@ -49,7 +49,7 @@ fn collect_assets(
                 if attachment["attributes"]["sudyfile_raw"].is_string()
                     && attachment["attributes"]["sudyfile_json"].is_null()
                 {
-                    ir.warnings.push(serde_json::json!({"kind":"attachment-metadata-unparsed","original":attachment["attributes"]["sudyfile_raw"],"value":"unknown","confidence":"unknown","reason":"附件属性不是标准 JSON，完整保留原值；未执行其内容","source_nodes":[snapshot.element_id(link)]}));
+                    ir.warnings.push(serde_json::json!({"kind":"attachment-metadata-unparsed","original":attachment["attributes"]["sudyfile_raw"],"value":"unknown","confidence":"unknown","reason":"附件属性解析失败，原值见 attachments.attributes.sudyfile_raw","source_nodes":[snapshot.element_id(link)]}));
                 }
                 ir.attachments.push(attachment);
             }
@@ -93,7 +93,7 @@ pub fn parse(
             .or_else(|| Url::parse(href).ok());
         match resolved.filter(|url| matches!(url.scheme(), "http" | "https")) {
             Some(url) => base_url = Some(url),
-            None => ir.warnings.push(serde_json::json!({"kind":"invalid-base-url","original":href,"value":"ignored","confidence":"high","reason":"base href 无法解析为 HTTP/HTTPS 基址；继续使用页面来源","source_nodes":[]})),
+            None => ir.warnings.push(serde_json::json!({"kind":"invalid-base-url","original":href,"value":"ignored","confidence":"high","reason":"base href 的 HTTP/HTTPS 地址校验失败，使用页面 URL 作为基址","source_nodes":[]})),
         }
     }
     if let Some(base) = &base_url {
@@ -424,7 +424,7 @@ fn parse_blocks(
             rules::evidence(
                 serde_json::json!("likely"),
                 "medium",
-                "段首连续空格/NBSP，可能是首行缩进",
+                "根据段首连续空格/NBSP 推断首行缩进",
                 &node,
             )
         } else {
@@ -484,7 +484,7 @@ fn parse_blocks(
         });
         let signature = None;
         if inline.is_some() {
-            ir.warnings.push(serde_json::json!({"kind":"inline-block-group","value":"paragraph","confidence":"high","reason":"连续行内节点按原顺序组成编辑块；原始父节点可能同时包含其他块","source_nodes":[node]}));
+            ir.warnings.push(serde_json::json!({"kind":"inline-block-group","value":"paragraph","confidence":"high","reason":"将连续行内节点按原顺序组合为段落","source_nodes":[node]}));
         }
         let mut block_runs = inline.unwrap_or_else(|| runs(el, base_url));
         for run in &mut block_runs {
@@ -507,7 +507,7 @@ fn parse_blocks(
                 let evidence = rules::evidence(
                     serde_json::json!(value),
                     if relative { "medium" } else { "high" },
-                    if relative { "祖先声明相对行距；缺少完整字体计算环境，保留声明值，实际行高可能有差异" }
+                    if relative { "继承祖先的相对行距声明；按相对单位记录，中等置信度" }
                     else if inherited { "继承正文范围内最近祖先的 line-height 声明" }
                     else { "原始段落含 line-height 声明" },
                     snapshot.element_id(ancestor),

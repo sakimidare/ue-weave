@@ -16,7 +16,7 @@ const output = resolve(option('--output', join(project, 'acceptance-output')));
 const max = Number(option('--max', '200'));
 const pageLimit = Number(option('--pages', '20'));
 if (![max, pageLimit].every(n => Number.isInteger(n) && n > 0)) throw new Error('--max / --pages 必须为正整数');
-const binary = join(project, 'target/debug/ue-recover');
+const binary = join(project, 'target/debug/ue-weave');
 const seed = 'https://jwc.seu.edu.cn/_t3454/zxdt/list.psp';
 const escape = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
 const pause = () => new Promise(done => setTimeout(done, 350));
@@ -62,7 +62,7 @@ async function saveIndex() {
   const summary = { generated_at: new Date().toISOString(), discovered: articles.size, processed: results.length, success: results.filter(r => r.ok).length, failed: results.filter(r => !r.ok).length, discovery_errors: discoveryErrors, articles: results };
   await writeFile(join(output, 'manifest.json'), JSON.stringify(summary, null, 2));
   const rows = results.map(r => `<tr><td>${r.index}</td><td><a href="${escape(r.url)}">${escape(r.title)}</a></td><td>${r.ok ? '成功' : '失败'} / ${escape(r.integrity ?? '')}</td><td>${r.ok ? `<a href="${r.directory}/reconstructed.html">HTML</a> · <a href="${r.directory}/reconstructed.md">Markdown</a> · <a href="${r.directory}/reconstructed.typ">Typst</a> · ${r.pdf ? `<a href="${r.directory}/result.pdf">PDF</a> · ` : ''}<a href="${r.directory}/reconstructed.json">IR</a> · <a href="${r.directory}/report.json">报告</a> · ` : ''}<a href="${r.directory}/run.log">日志</a></td><td>${escape(r.warning_count ?? '')}</td></tr>`).join('\n');
-  await writeFile(join(output, 'index.html'), `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>教务处文章还原验收</title><style>body{font:16px system-ui;margin:40px;color:#223}table{border-collapse:collapse;width:100%}td,th{padding:12px;border-bottom:1px solid #ddd;text-align:left}a{color:#1768a6}h1{font-size:26px}</style><h1>教务处文章还原验收</h1><p>已处理 ${summary.processed} / ${summary.discovered}；成功 ${summary.success}；失败 ${summary.failed}。警告包含推断、已知清理和不可恢复信息。</p><p>图片已下载；附件${args.includes('--download-attachments') ? '已启用下载' : '保留远程链接'}。每篇保留原始快照。PDF 编译日志见各目录。</p><table><thead><tr><th>序号</th><th>文章／原网页</th><th>状态／正文检查</th><th>验收文件</th><th>警告数</th></tr></thead><tbody>${rows}</tbody></table></html>`);
+  await writeFile(join(output, 'index.html'), `<!doctype html><html lang="zh-CN"><meta charset="utf-8"><title>教务处文章还原验收</title><style>body{font:16px system-ui;margin:40px;color:#223}table{border-collapse:collapse;width:100%}td,th{padding:12px;border-bottom:1px solid #ddd;text-align:left}a{color:#1768a6}h1{font-size:26px}</style><h1>教务处文章还原验收</h1><p>已处理 ${summary.processed} / ${summary.discovered}；成功 ${summary.success}；失败 ${summary.failed}。处理记录包含推断、格式清理和未知字段。</p><p>图片已下载；附件${args.includes('--download-attachments') ? '已启用下载' : '保留远程链接'}。每篇保留原始快照。PDF 编译日志见各目录。</p><table><thead><tr><th>序号</th><th>文章／原网页</th><th>状态／正文检查</th><th>验收文件</th><th>警告数</th></tr></thead><tbody>${rows}</tbody></table></html>`);
 }
 await writeFile(join(output, 'urls.txt'), [...articles.keys()].join('\n'));
 await saveIndex();

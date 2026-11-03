@@ -21,6 +21,7 @@ pub struct Output {
 
 #[derive(Clone, Copy, Default, serde::Serialize)]
 pub struct Settings {
+    pub include_metadata: bool,
     pub strip_font_family: bool,
     pub strip_font_size: bool,
     pub strip_text_color: bool,
@@ -41,6 +42,9 @@ pub struct Settings {
 
 #[derive(clap::Args, Default)]
 pub struct Overrides {
+    /// 在 HTML、Markdown 和 Typst 正文上方显示标题、日期、作者等元数据。
+    #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true")]
+    include_metadata: Option<bool>,
     /// 移除字体名称，可覆盖 --strip-fonts。
     #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true")]
     strip_font_family: Option<bool>,
@@ -134,6 +138,7 @@ impl Overrides {
         let mut settings = profile.settings();
         macro_rules! override_fields { ($($field:ident),*) => { $(if let Some(value) = self.$field { settings.$field = value; })* }; }
         override_fields!(
+            include_metadata,
             strip_fonts,
             strip_colors,
             strip_layout,
@@ -298,7 +303,7 @@ fn diff(before: &Value, after: &Value, path: &str, sources: &[Value], out: &mut 
                 diff(old, new, &format!("{path}[{index}]"), sources, out);
             }
         }
-        _ => out.push(json!({"field":path,"original":before,"value":after,"source_nodes":sources,"confidence":"high","inferred":false,"reason":"用户选择的输出档位规则；规范 IR 与原始快照保留原值"})),
+        _ => out.push(json!({"field":path,"original":before,"value":after,"source_nodes":sources,"confidence":"high","inferred":false,"reason":"按输出预设和开关转换格式"})),
     }
 }
 

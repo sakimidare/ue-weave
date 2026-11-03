@@ -5,6 +5,7 @@ mod audit;
 mod css;
 mod downloader;
 mod error;
+mod export;
 mod inference;
 mod inline;
 mod input;
@@ -37,7 +38,7 @@ use std::time::Duration;
 use std::{fs, path::PathBuf};
 
 #[derive(Parser)]
-#[command(name = "ue-recover", about = "UEditor/WebPlus HTML 反编译与结构还原器")]
+#[command(name = "ue-weave", about = "UEditor/WebPlus HTML 反编译与结构还原器")]
 struct Args {
     url: Option<String>,
     #[arg(long)]
@@ -72,7 +73,7 @@ struct Args {
     download_images: bool,
     #[arg(long)]
     download_attachments: bool,
-    /// 输出格式保留程度；原始快照和规范 IR 不受影响。
+    /// 选择 HTML、Markdown 和 Typst 的格式预设。
     #[arg(long, value_enum, default_value_t = profile::Profile::Conservative)]
     profile: profile::Profile,
     #[command(flatten)]
@@ -81,9 +82,7 @@ struct Args {
 
 fn load_input(args: &Args, logger: &Logger) -> Result<input::Input> {
     if args.url.is_some() == args.input.is_some() {
-        return Err(RecoverError::Arguments(
-            "必须提供 URL 或 --input，且只能提供一个".into(),
-        ));
+        return Err(RecoverError::Arguments("输入 URL 与 --input 二选一".into()));
     }
     if let Some(path) = &args.input {
         return fs::read(path)
@@ -96,7 +95,7 @@ fn load_input(args: &Args, logger: &Logger) -> Result<input::Input> {
     let url = args.url.clone().expect("validated URL");
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(args.timeout))
-        .user_agent("ue-recover/0.1")
+        .user_agent("ue-weave/0.1")
         .build()
         .map_err(|source| RecoverError::Request {
             url: url.clone(),
@@ -193,7 +192,7 @@ fn run(args: &Args) -> Result<()> {
     let (attachment_errors, image_errors) = if args.download_attachments || args.download_images {
         let client = reqwest::blocking::Client::builder()
             .timeout(Duration::from_secs(args.timeout))
-            .user_agent("ue-recover/0.1 attachment-downloader")
+            .user_agent("ue-weave/0.1 attachment-downloader")
             .build()
             .map_err(|source| RecoverError::Request {
                 url: source.to_string(),
@@ -234,7 +233,7 @@ fn run(args: &Args) -> Result<()> {
     ir.warnings
         .extend(attachment_errors.iter().chain(&image_errors).cloned());
     let original = raw_html::extract(&html, root).unwrap_or_else(|| {
-        ir.warnings.push(serde_json::json!({"kind":"raw-snapshot-fallback","value":"normalized-dom","confidence":"unknown","reason":"无法唯一校验正文源码范围；original.html 使用 DOM 序列化，完整原始字节保存在 source.bin","source_nodes":[]}));
+        ir.warnings.push(serde_json::json!({"kind":"raw-snapshot-fallback","value":"normalized-dom","confidence":"unknown","reason":"正文源码范围校验未通过；original.html 使用 DOM 序列化，source.bin 保存输入字节","source_nodes":[]}));
         root.html()
     });
     let reconstructed_json =
@@ -244,14 +243,11 @@ fn run(args: &Args) -> Result<()> {
         })?;
     let settings = args.output_options.resolve(args.profile);
     let output = profile::prepare(&ir, settings);
-    let reconstructed_html = renderer::render(&output.ir);
-    let reconstructed_markdown = if settings.native_markdown {
-        markdown::render_editable(&output.ir)
-    } else {
-        markdown::render(&output.ir)
-    };
-    let reconstructed_typst = typst::render(&output.ir);
-    let report = serde_json::json!({"source":source,"selector":args.selector,"inference_disabled":args.no_inference,"download_attachments":args.download_attachments,"download_images":args.download_images,"warnings":ir.warnings,"attachment_errors":attachment_errors,"image_errors":image_errors,"counts":{"blocks":ir.blocks.len(),"total_blocks":ir.blocks.iter().map(model::Block::block_count).sum::<usize>(),"attachments":ir.attachments.len(),"images":ir.images.len(),"original_nodes":ir.original_nodes.len()},"limitations":["这是反编译/结构还原，目标是生成可编辑结构模型。","UEditor 保存的是 HTML，系统没有可供完整逆向的专有二进制格式。","filterWord 删除的信息无法恢复。","original.html 始终保留。"]});
+    let documents = export::render(&output.ir, settings);
+    let reconstructed_html = documents.html;
+    let reconstructed_markdown = documents.markdown;
+    let reconstructed_typst = documents.typst;
+    let report = serde_json::json!({"source":source,"selector":args.selector,"inference_disabled":args.no_inference,"download_attachments":args.download_attachments,"download_images":args.download_images,"warnings":ir.warnings,"attachment_errors":attachment_errors,"image_errors":image_errors,"counts":{"blocks":ir.blocks.len(),"total_blocks":ir.blocks.iter().map(model::Block::block_count).sum::<usize>(),"attachments":ir.attachments.len(),"images":ir.images.len(),"original_nodes":ir.original_nodes.len()},"limitations":["输出模型：可编辑 JSON IR。","UEditor 输入格式：HTML。","filterWord 已删除的属性：unknown。","正文快照：original.html。"]});
     let mut report = report;
     report["selector"] = serde_json::json!(selected);
     report["requested_selector"] =
@@ -314,7 +310,7 @@ fn main() {
                 serde_json::json!({"status":"error", "code":error.code(), "error":error.to_string(), "network":match &error { RecoverError::Network(error) => error.details(), _ => serde_json::Value::Null }})
             );
         }
-        eprintln!("ue-recover: error: {error}");
+        eprintln!("ue-weave: error: {error}");
         std::process::exit(1);
     }
 }

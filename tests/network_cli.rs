@@ -54,7 +54,7 @@ fn page_and_attachment_retry_and_local_config_use_same_pipeline() {
     fs::create_dir_all(&dir).unwrap();
     let config = dir.join("sites.json");
     fs::write(&config, r#"{"content":".body","title":"h1"}"#).unwrap();
-    let result = Command::new(env!("CARGO_BIN_EXE_ue-recover"))
+    let result = Command::new(env!("CARGO_BIN_EXE_ue-weave"))
         .arg(&url)
         .args([
             "--download-attachments",
@@ -112,7 +112,7 @@ fn page_and_attachment_retry_and_local_config_use_same_pipeline() {
 fn exhausted_retries_produce_structured_error() {
     let (url, server) = serve(vec![(503, "".into()), (503, "".into())]);
     let dir = std::env::temp_dir().join(format!("ue-http-error-{}", std::process::id()));
-    let result = Command::new(env!("CARGO_BIN_EXE_ue-recover"))
+    let result = Command::new(env!("CARGO_BIN_EXE_ue-weave"))
         .arg(&url)
         .args(["--retries", "1", "--timeout", "2", "--json", "--output"])
         .arg(&dir)

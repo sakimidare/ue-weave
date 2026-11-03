@@ -1,4 +1,4 @@
-# ue-recover
+# ue-weave
 
 用 Rust 编写的 UEditor / WebPlus 文章结构还原工具。读取网页或本地 HTML，提取正文，生成可编辑的 JSON 中间表示（IR），并导出 HTML、Markdown 和 Typst。
 
@@ -17,7 +17,7 @@ cargo install --path .
 
 ```sh
 cargo build --release
-./target/release/ue-recover --help
+./target/release/ue-weave --help
 ```
 
 ## 快速开始
@@ -25,20 +25,20 @@ cargo build --release
 抓取文章：
 
 ```sh
-ue-recover 'https://jwc.seu.edu.cn/2026/0915/c21679a583204/page.htm' \
+ue-weave 'https://jwc.seu.edu.cn/2026/0915/c21679a583204/page.htm' \
   --output output/ --profile aggressive
 ```
 
 读取本地 HTML：
 
 ```sh
-ue-recover --input page.html --output output/
+ue-weave --input page.html --output output/
 ```
 
 指定正文容器并下载资源：
 
 ```sh
-ue-recover 'https://example.org/article.html' \
+ue-weave 'https://example.org/article.html' \
   --selector '.article-body' --output output/ \
   --download-images --download-attachments
 ```
@@ -69,13 +69,24 @@ ue-recover 'https://example.org/article.html' \
 typst compile output/reconstructed.typ output/result.pdf
 ```
 
+### 显示文章元数据
+
+使用 `--include-metadata` 在 HTML、Markdown、Typst 正文上方添加标题、日期、作者、来源和发布者：
+
+```sh
+ue-weave --input page.html --output output/ --include-metadata
+ue-weave --input-ir output/reconstructed.json --output edited-output/ --include-metadata
+```
+
+标题使用一级标题，其余字段逐行显示；缺失或空白字段自动跳过。三档预设默认关闭此选项，也可显式设置 `--include-metadata=false`。元数据取自 IR 的 `metadata`，可结合选择器配置提取，或编辑 JSON 后重新导出。JSON 正文结构和原始快照保持原样。
+
 ## 输出预设
 
 `--profile` 接受 `conservative`、`balanced`、`aggressive`，也接受中文名称 `保守`、`均衡`、`激进`。
 
 | 预设 | 输出效果 |
 | --- | --- |
-| `conservative`（默认） | 尽量保留已识别的字体、字号、颜色、对齐和布局 |
+| `conservative`（默认） | 保留已识别的字体、字号、颜色、对齐和布局 |
 | `balanced` | 统一字体和布局，保留颜色、对齐、缩进 |
 | `aggressive` | 简化视觉格式，优先可读性和编辑便利性 |
 
@@ -108,15 +119,15 @@ typst compile output/reconstructed.typ output/result.pdf
 
 ```sh
 # 激进档保留文字颜色
-ue-recover --input page.html --output output/ \
+ue-weave --input page.html --output output/ \
   --profile aggressive --strip-text-color=false
 
 # 均衡档保留字号
-ue-recover --input page.html --output output/ \
+ue-weave --input page.html --output output/ \
   --profile balanced --strip-font-size=false
 
 # 保守档移除字体名称和图片固定尺寸
-ue-recover --input page.html --output output/ \
+ue-weave --input page.html --output output/ \
   --profile conservative --strip-font-family --strip-image-dimensions
 ```
 
@@ -136,6 +147,7 @@ ue-recover --input page.html --output output/ \
 | `--download-images` | 下载正文图片 |
 | `--download-attachments` | 下载附件并替换为本地链接 |
 | `--keep-raw` | 额外保存完整解码页面 |
+| `--include-metadata` | 在导出文档顶部显示文章元数据 |
 | `--no-inference` | 关闭启发式推断 |
 | `--json` | 以 JSON 输出运行结果摘要 |
 | `--verbose` | 输出详细阶段日志 |
@@ -156,10 +168,10 @@ ue-recover --input page.html --output output/ \
 ```
 
 ```sh
-ue-recover 'https://cse.seu.edu.cn/2026/1102/c22535a588376/page.htm' \
+ue-weave 'https://cse.seu.edu.cn/2026/1102/c22535a588376/page.htm' \
   --site-config configs/webplus.json --output output/cse
 
-ue-recover --input fixtures/cse-588376.html \
+ue-weave --input fixtures/cse-588376.html \
   --site-config configs/webplus.json \
   --output output/local
 ```
@@ -169,7 +181,7 @@ ue-recover --input fixtures/cse-588376.html \
 `--selector` 支持 `content`、`title`、`date`、`source`、`author`、`publisher` 六个字段，可以重复传入。同一字段最后一次设置生效：
 
 ```sh
-ue-recover --input page.html --output output/ \
+ue-weave --input page.html --output output/ \
   --site-config configs/webplus.json \
   --selector 'content=.article-body' \
   --selector 'title=h1' \
@@ -179,14 +191,14 @@ ue-recover --input page.html --output output/ \
 
 `--selector '.article-body'` 等价于 `--selector 'content=.article-body'`。省略配置文件时也可直接传入这些字段；`--selector content=auto` 启用正文自动识别。CSS 属性选择器中的等号照常使用，例如 `--selector 'title=h1[data-role="title"]'`。
 
-省略字段会使用内置规则；配置的元数据选择器匹配不到内容时，该字段留空。配置文件加载时检查 JSON 字段和 CSS 语法，错误信息标注文件路径及字段。报告中的 `site_selectors` 记录生效配置。内置学院模板使用 `.arti_*` 元数据，避免导航栏的 `.Article_Title` 干扰文章标题。
+省略字段会使用内置规则；配置的元数据选择器匹配不到内容时，该字段留空。配置文件加载时检查 JSON 字段和 CSS 语法，错误信息标注文件路径及字段。报告中的 `site_selectors` 记录生效配置。内置学院模板使用 `.arti_*` 元数据，将文章标题与导航栏的 `.Article_Title` 分开提取。
 
 ## 编辑与重新导出
 
 修改 `reconstructed.json` 的 `blocks`、`runs` 等字段后，重新生成文档：
 
 ```sh
-ue-recover --input-ir output/reconstructed.json \
+ue-weave --input-ir output/reconstructed.json \
   --output edited-output/ --profile balanced
 ```
 
@@ -223,7 +235,7 @@ UEditor 的保存结果是 HTML。结构还原以这份 HTML 中的内容为依�
 `--verbose` 显示输入来源、字节数、选择器、输出目录和结果统计。错误信息包含处理阶段及相关 URL 或文件路径，例如：
 
 ```text
-ue-recover: error: 正文选择器未找到：.missing。请确认页面是文章详情页，或使用 --selector 指定正文容器
+ue-weave: error: 正文选择器未找到：.missing。可使用 --selector content=CSS 指定正文容器
 ```
 
 网页、图片和附件共用网络请求与重试逻辑。默认每次请求超时 30 秒，临时失败最多重试 2 次，间隔按 250ms、500ms、1s、2s、4s 递增。
@@ -231,7 +243,7 @@ ue-recover: error: 正文选择器未找到：.missing。请确认页面是文�
 超时、DNS 解析、连接故障、响应读取中断，以及 HTTP 408、429、500、502、503、504 会触发有限重试。HTTP 403、404 和 TLS 证书或协议错误直接返回。`Retry-After` 为 0–30 秒时按要求等待；更长等待或日期格式会结束当前请求，并输出原因。
 
 ```sh
-ue-recover 'https://cse.seu.edu.cn/2026/1102/c22535a588376/page.htm' \
+ue-weave 'https://cse.seu.edu.cn/2026/1102/c22535a588376/page.htm' \
   --output output/cse --retries 3 --timeout 45 --verbose --json
 ```
 

@@ -47,7 +47,7 @@ pub fn check(root: ElementRef, ir: &mut crate::model::Ir) {
             .zip(reconstructed.chars())
             .take_while(|(a, b)| a == b)
             .count();
-        ir.warnings.push(serde_json::json!({"kind":"content-integrity-mismatch","value":evidence,"confidence":"high","reason":"重建正文与输入存在文字差异，请核对原始快照；可能发生内容遗漏、重复或顺序变化","source_nodes":["n0"],"first_difference":offset,"original_excerpt":original.chars().skip(offset.saturating_sub(20)).take(80).collect::<String>(),"reconstructed_excerpt":reconstructed.chars().skip(offset.saturating_sub(20)).take(80).collect::<String>()}));
+        ir.warnings.push(serde_json::json!({"kind":"content-integrity-mismatch","value":evidence,"confidence":"high","reason":"正文文字或顺序存在差异；first_difference 标记首个差异位置，excerpt 字段提供对照片段","source_nodes":["n0"],"first_difference":offset,"original_excerpt":original.chars().skip(offset.saturating_sub(20)).take(80).collect::<String>(),"reconstructed_excerpt":reconstructed.chars().skip(offset.saturating_sub(20)).take(80).collect::<String>()}));
     }
 }
 

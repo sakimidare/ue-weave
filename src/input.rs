@@ -49,12 +49,12 @@ impl Input {
             .as_deref()
             .is_some_and(|label| Encoding::for_label(label.as_bytes()).is_none())
         {
-            warnings.push(json!({"kind":"unknown-encoding","original":label,"value":encoding.name(),"confidence":"low","reason":"编码声明无法识别，保留原始输入并采用 BOM 或 UTF-8","source_nodes":[]}));
+            warnings.push(json!({"kind":"unknown-encoding","original":label,"value":encoding.name(),"confidence":"low","reason":"编码声明未匹配已支持的编码，使用 BOM 指定的编码或 UTF-8","source_nodes":[]}));
         }
         let (text, _, replaced) = encoding.decode(&bytes);
         let html = text.into_owned();
         if replaced {
-            warnings.push(json!({"kind":"decode-replacement","value":encoding.name(),"confidence":"high","reason":"部分字节无法解码；完整原始字节保存在 source.bin","source_nodes":[]}));
+            warnings.push(json!({"kind":"decode-replacement","value":encoding.name(),"confidence":"high","reason":"解码时使用了替换字符；对应输入字节见 source.bin","source_nodes":[]}));
         }
         Self {
             bytes,
