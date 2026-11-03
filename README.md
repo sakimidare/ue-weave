@@ -43,7 +43,9 @@ ue-recover 'https://example.org/article.html' \
   --download-images --download-attachments
 ```
 
-默认正文选择器为 `.Article_Content`。标题、日期、来源和作者分别从 `.Article_Title`、`.Article_PublishDate`、`.Article_Source`、`.Article_Author` 提取。
+默认使用 `--selector auto`，依次识别 `.Article_Content`、`.wp_articlecontent`，适用于教务处、计算机学院、校史校友等 WebPlus 模板。显式指定 `--selector` 时使用指定的容器。
+
+元数据支持 `.Article_Title`、`.Article_PublishDate`、`.Article_Source`、`.Article_Author`，以及 `.arti_title`、`.arti_update`、`.arti_source`、`.arti_author`。`.arti_publisher` 单独记录为发布者 `publisher`，日期等字段会清理“发布时间：”等标签前缀。报告记录请求的选择器和实际使用的选择器。
 
 ## 输出文件
 

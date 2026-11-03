@@ -92,19 +92,7 @@ pub fn parse(
         ir.metadata
             .insert("resolved_base_url".into(), serde_json::json!(base.as_str()));
     }
-    for (key, selector) in [
-        ("title", ".Article_Title"),
-        ("date", ".Article_PublishDate"),
-        ("source", ".Article_Source"),
-        ("author", ".Article_Author"),
-    ] {
-        if let Some(el) = document.select(&Selector::parse(selector).unwrap()).next() {
-            ir.metadata.insert(
-                key.into(),
-                serde_json::Value::String(rules::text(el).trim().into()),
-            );
-        }
-    }
+    ir.metadata.extend(crate::site::metadata(document));
     collect_assets(root, &base_url, &mut ir, &snapshot);
     parse_blocks(root, &base_url, no_inference, &snapshot, &mut ir);
     ir.original_nodes = snapshot.nodes;

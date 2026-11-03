@@ -1,6 +1,47 @@
 use std::{fs, process::Command};
 
 #[test]
+fn webplus_auto_selection_and_snapshot() {
+    let dir = std::env::temp_dir().join(format!("ue-webplus-{}", std::process::id()));
+    let output = Command::new(env!("CARGO_BIN_EXE_ue-recover"))
+        .args(["--input", "fixtures/webplus-college.html", "--output"])
+        .arg(&dir)
+        .arg("--json")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["selector"], ".wp_articlecontent");
+    assert_eq!(report["requested_selector"], "auto");
+    let ir: serde_json::Value =
+        serde_json::from_slice(&fs::read(dir.join("reconstructed.json")).unwrap()).unwrap();
+    assert_eq!(ir["metadata"]["title"], "学院新闻");
+    assert_eq!(ir["metadata"]["publisher"], "管理员");
+    assert!(ir["metadata"].get("author").is_none());
+    assert_eq!(ir["metadata"]["date"], "2026-11-02");
+    let raw = fs::read_to_string(dir.join("original.html")).unwrap();
+    assert!(raw.contains("正文&nbsp;内容"));
+    assert!(!raw.contains("arti_metas"));
+    let explicit = Command::new(env!("CARGO_BIN_EXE_ue-recover"))
+        .args([
+            "--input",
+            "fixtures/webplus-college.html",
+            "--selector",
+            ".missing",
+            "--output",
+        ])
+        .arg(dir.join("missing"))
+        .output()
+        .unwrap();
+    assert!(!explicit.status.success());
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
 fn output_profiles_and_overrides_preserve_canonical_ir() {
     let base = std::env::temp_dir().join(format!("ue-profiles-{}", std::process::id()));
     for profile in ["conservative", "balanced", "aggressive"] {

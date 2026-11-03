@@ -19,6 +19,7 @@ mod regenerate;
 mod renderer;
 mod rules;
 mod safety;
+mod site;
 mod snapshot;
 mod table;
 mod typst;
@@ -40,7 +41,8 @@ struct Args {
     /// 从已有输出目录中的编辑后 IR 重新生成文档。
     #[arg(long)]
     input_ir: Option<PathBuf>,
-    #[arg(long, default_value = ".Article_Content")]
+    /// 正文 CSS 选择器；auto 自动识别常见 WebPlus 模板。
+    #[arg(long, default_value = "auto")]
     selector: String,
     #[arg(short, long)]
     output: PathBuf,
@@ -155,14 +157,13 @@ fn run(args: &Args) -> Result<()> {
         "input",
         format!("读取完成，{} bytes，来源 {}", html.len(), source),
     );
-    let selector = Selector::parse(&args.selector).map_err(|_| RecoverError::InvalidSelector {
-        selector: args.selector.clone(),
-    })?;
     let document = Html::parse_document(&html);
-    logger.stage("parse", format!("使用正文选择器 {}", args.selector));
+    let selected = site::content_selector(&document, &args.selector)?;
+    let selector = Selector::parse(&selected).expect("validated selector");
+    logger.stage("parse", format!("使用正文选择器 {}", selected));
     let parsed_ir = parser::parse(
         &document,
-        &args.selector,
+        &selected,
         args.no_inference,
         Some(source.clone()),
     )?;
@@ -170,7 +171,7 @@ fn run(args: &Args) -> Result<()> {
         .select(&selector)
         .next()
         .ok_or_else(|| RecoverError::ContentNotFound {
-            selector: args.selector.clone(),
+            selector: selected.clone(),
         })?;
     let mut ir = parsed_ir;
     ir.warnings.extend(warnings);
@@ -219,6 +220,8 @@ fn run(args: &Args) -> Result<()> {
     let reconstructed_typst = typst::render(&output.ir);
     let report = serde_json::json!({"source":source,"selector":args.selector,"inference_disabled":args.no_inference,"download_attachments":args.download_attachments,"download_images":args.download_images,"warnings":ir.warnings,"attachment_errors":attachment_errors,"image_errors":image_errors,"counts":{"blocks":ir.blocks.len(),"total_blocks":ir.blocks.iter().map(model::Block::block_count).sum::<usize>(),"attachments":ir.attachments.len(),"images":ir.images.len(),"original_nodes":ir.original_nodes.len()},"limitations":["这是反编译/结构还原，目标是生成可编辑结构模型。","UEditor 保存的是 HTML，系统没有可供完整逆向的专有二进制格式。","filterWord 删除的信息无法恢复。","original.html 始终保留。"]});
     let mut report = report;
+    report["selector"] = serde_json::json!(selected);
+    report["requested_selector"] = serde_json::json!(args.selector);
     report["output_profile"] = serde_json::json!(args.profile);
     report["output_options"] = serde_json::json!(settings);
     report["output_changes"] = serde_json::json!(output.changes);
