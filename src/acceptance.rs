@@ -1,4 +1,4 @@
-//! Network-independent checks against captured public article bodies.
+//! 使用已保存的公开文章正文进行离线验收。
 use scraper::{Html, Selector};
 
 fn visible_text(html: &str) -> String {

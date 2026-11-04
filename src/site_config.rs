@@ -1,4 +1,4 @@
-//! Selector overrides shared by URL and local HTML input.
+//! URL 和本地 HTML 共用的选择器配置。
 use crate::{
     error::{RecoverError, Result},
     site,
@@ -136,7 +136,8 @@ mod tests {
     }
     #[test]
     fn partial_configuration_preserves_automatic_metadata() {
-        let doc = Html::parse_document("<h1 class='arti_title'>原始标题</h1><span class='arti_update'>发布时间：2026-11-03</span><h2>自定义标题</h2><div class='wp_articlecontent'>正文</div>");
+        let doc = Html::parse_document("<h1 class='arti_title'>原始标题</h1><span class='arti_update'>发布时间：2026-11-03</span><h2>自定义标题</h2>\
+            <div class='wp_articlecontent'>正文</div>");
         let mut meta = site::metadata(&doc);
         let selectors: Selectors =
             serde_json::from_value(serde_json::json!({"title":"h2"})).unwrap();

@@ -84,12 +84,14 @@ pub fn identify(link: ElementRef, href: &str) -> Option<Value> {
         reasons.push("链接具有 download 属性");
     }
     let parsed = raw.and_then(parse_metadata);
-    Some(
-        json!({"confidence":if extension || icon || raw.is_some() || download.is_some() {"high"} else {"medium"},"reason":reasons.join("；"),"attributes":{"sudyfile_raw":raw,"sudyfile_json":parsed,"isupload":link.value().attr("isupload"),"download":download,"title":link.value().attr("title")}}),
-    )
+    Some(json!({
+        "confidence": if extension || icon || raw.is_some() || download.is_some() {"high"} else {"medium"},
+        "reason": reasons.join("；"),
+        "attributes": {"sudyfile_raw":raw,"sudyfile_json":parsed,"isupload":link.value().attr("isupload"),"download":download,"title":link.value().attr("title")},
+    }))
 }
 
-/// Accept JSON objects plus single-quoted string literals. No expressions are evaluated.
+/// 读取 JSON 对象及单引号字符串，将表达式视为无效输入。
 pub(crate) fn parse_metadata(raw: &str) -> Option<Value> {
     if let Ok(value) = serde_json::from_str::<Value>(raw) {
         return value.is_object().then_some(value);
@@ -194,7 +196,8 @@ mod tests {
 
     #[test]
     fn div_pdf_with_fallback_content_is_atomic_and_safe() {
-        let doc = scraper::Html::parse_document("<div class='Article_Content'><p>前</p><div class='wp_pdf_player' pdfsrc='/a.pdf'><p>下载 PDF</p></div><p>后</p><div class='wp_pdf_player' pdfsrc='javascript:alert(1)'>说明</div></div>");
+        let doc = scraper::Html::parse_document("<div class='Article_Content'><p>前</p><div class='wp_pdf_player' pdfsrc='/a.pdf'><p>下载 \
+            PDF</p></div><p>后</p><div class='wp_pdf_player' pdfsrc='javascript:alert(1)'>说明</div></div>");
         let ir = crate::parser::parse(&doc, ".Article_Content", false, None).unwrap();
         let html = crate::renderer::render(&ir);
         assert_eq!(ir.attachments.len(), 1);
@@ -206,7 +209,11 @@ mod tests {
 
     #[test]
     fn embedded_pdf_keeps_links_and_rejects_unsafe_sources() {
-        let doc = scraper::Html::parse_document("<div class='Article_Content'><p><span class='wp_pdf_player' pdfsrc='/file.pdf' sudyfile-attr=\"{'title':'undefinedundefined'}\"></span></p><p><span class='wp_pdf_player' pdfsrc='javascript:alert(1)'>保留说明</span></p></div>");
+        let doc = scraper::Html::parse_document(
+            "<div class='Article_Content'><p><span class='wp_pdf_player' pdfsrc='/file.pdf' \
+                sudyfile-attr=\"{'title':'undefinedundefined'}\"></span></p><p><span class='wp_pdf_player' \
+                pdfsrc='javascript:alert(1)'>保留说明</span></p></div>",
+        );
         let ir = crate::parser::parse(
             &doc,
             ".Article_Content",
@@ -227,7 +234,9 @@ mod tests {
     }
     #[test]
     fn attributes_identify_extensionless_downloads_without_query_false_positives() {
-        let document = scraper::Html::parse_document("<div class='Article_Content'><p><a href='/search?q=a.pdf'>检索</a><a href='/a.pdf.html'>网页</a><a href='/a.PDF?token=1'>文件</a><a href='/download?id=3' sudyfile-attr=\"{'title':'附件.doc'}\" title='附件.doc'>附件</a><a href='/get?id=4' download='x.docx'>下载</a></p></div>");
+        let document = scraper::Html::parse_document("<div class='Article_Content'><p><a href='/search?q=a.pdf'>检索</a><a href='/a.pdf.html'>网页</a><a \
+            href='/a.PDF?token=1'>文件</a><a href='/download?id=3' sudyfile-attr=\"{'title':'附件.doc'}\" \
+            title='附件.doc'>附件</a><a href='/get?id=4' download='x.docx'>下载</a></p></div>");
         let ir = crate::parser::parse(&document, ".Article_Content", false, None).unwrap();
         assert_eq!(ir.attachments.len(), 3);
         assert_eq!(ir.attachments[1]["attributes"]["title"], "附件.doc");

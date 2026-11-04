@@ -1,4 +1,4 @@
-//! Non-executing inline declaration scanning; original spelling remains in snapshots.
+//! 解析内联 CSS 声明，原始写法保存在节点记录中。
 pub fn declarations(input: &str) -> Vec<&str> {
     let mut result = Vec::new();
     let mut start = 0;

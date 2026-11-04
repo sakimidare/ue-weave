@@ -176,7 +176,7 @@ fn image_dimension(value: &str) -> Option<String> {
 }
 
 fn font_families(value: &str) -> Vec<String> {
-    // Match HTML export: preserve rejected declarations only in the source IR.
+    // 与 HTML 导出一致：被过滤的声明保存在来源记录中。
     if !crate::safety::safe_css(value) {
         return Vec::new();
     }

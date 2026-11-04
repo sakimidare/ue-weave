@@ -1,4 +1,4 @@
-//! Static WebPlus template selection and metadata extraction.
+//! 静态识别 WebPlus 模板并提取文章信息。
 use crate::{
     error::{RecoverError, Result},
     rules,
@@ -106,7 +106,9 @@ mod tests {
     }
     #[test]
     fn webplus_metadata_skips_empty_values_and_separates_publisher() {
-        let doc = Html::parse_document("<h1 class='arti_title'></h1><h1 class='arti_title'>学院新闻</h1><span class='arti_update'>发布时间：2026-11-02</span><span class='arti_publisher'>发布者：管理员</span><span class='arti_author'>作者: 张三</span><div class='wp_articlecontent'><p>正文</p></div>");
+        let doc = Html::parse_document("<h1 class='arti_title'></h1><h1 class='arti_title'>学院新闻</h1><span class='arti_update'>\
+            发布时间：2026-11-02</span><span class='arti_publisher'>发布者：管理员</span><span class='arti_author'>作者: \
+            张三</span><div class='wp_articlecontent'><p>正文</p></div>");
         assert_eq!(
             content_selector(&doc, "auto").unwrap(),
             ".wp_articlecontent"

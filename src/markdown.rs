@@ -133,7 +133,7 @@ pub fn render(ir: &Ir) -> String {
         .join("\n\n")
 }
 
-/// Prefer portable, directly editable Markdown where the structure is representable.
+/// 对可表达的结构生成便于直接编辑的 Markdown。
 pub fn render_editable(ir: &Ir) -> String {
     ir.blocks
         .iter()
@@ -210,7 +210,9 @@ fn editable_block(block: &Block) -> String {
 mod tests {
     #[test]
     fn escapes_content_and_destinations_and_rejects_unsafe_links() {
-        let document = scraper::Html::parse_document("<div class='Article_Content'><p># 标题 [链接] *文本* &lt;script&gt; &amp;copy;</p><p><a href='https://example.org/a(b)?x=1&amp;y=2'>[名称]</a><a href='javascript:alert(1)'>保留文字</a><img src='data:text/html,bad'></p><p><span style='color:red'>[红字]</span></p></div>");
+        let document = scraper::Html::parse_document("<div class='Article_Content'><p># 标题 [链接] *文本* &lt;script&gt; &amp;copy;</p><p><a \
+            href='https://example.org/a(b)?x=1&amp;y=2'>[名称]</a><a href='javascript:alert(1)'>保留文字</a><img \
+            src='data:text/html,bad'></p><p><span style='color:red'>[红字]</span></p></div>");
         let ir = crate::parser::parse(&document, ".Article_Content", false, None).unwrap();
         let output = super::render(&ir);
         assert!(output.contains(r"\# 标题 \[链接\] \*文本\* &lt;script&gt; &amp;copy;"));

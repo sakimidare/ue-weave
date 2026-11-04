@@ -1,4 +1,4 @@
-//! GFM tables and readable HTML for structures requiring spans or nested blocks.
+//! 生成 GFM 表格，合并单元格和嵌套结构使用 HTML 表达。
 use super::{block_markdown, run_markdown};
 use crate::model::{Block, TableCell};
 
@@ -79,7 +79,7 @@ pub(super) fn render(block: &Block) -> String {
 }
 
 pub(super) fn html(block: &Block) -> String {
-    // Only insert whitespace between structural tags; inline content stays intact.
+    // 仅在结构标签之间插入排版空白，保留行内文字的间距。
     crate::renderer::block_html(block)
         .replace("<tr", "\n<tr")
         .replace("</tr>", "</tr>\n")
@@ -97,7 +97,8 @@ mod tests {
 
     #[test]
     fn headerless_table_preserves_first_row_and_inline_content() {
-        let output = export("<table><caption>说明</caption><tr><td></td><td><b>机器人</b></td></tr><tr><td><p>报名</p><p>条件</p></td><td>A|B<br><a href='https://example.org'>链接</a><img src='a.png'></td></tr></table>");
+        let output = export("<table><caption>说明</caption><tr><td></td><td><b>机器人</b></td></tr><tr><td><p>报名</p><p>条件</p>\
+            </td><td>A|B<br><a href='https://example.org'>链接</a><img src='a.png'></td></tr></table>");
         assert!(output.starts_with("说明\n\n|  |  |\n| --- | --- |\n|  | **机器人** |"));
         assert!(output.contains("报名<br><br>条件"));
         assert!(

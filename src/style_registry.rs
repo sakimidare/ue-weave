@@ -1,4 +1,4 @@
-//! Shared property inventory for parsing, audit and HTML-backed exports.
+//! 解析、审计和 HTML 导出共用的样式属性列表。
 pub const TABLE_STYLES: &[&str] = &[
     "width",
     "height",

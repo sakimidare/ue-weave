@@ -155,7 +155,7 @@ pub fn cell_styles(
     styles
 }
 
-/// Resolve spans against the remaining rows in this thead/tbody/tfoot group.
+/// 根据当前 thead、tbody 或 tfoot 中剩余的行数计算跨行范围。
 pub fn row_span(cell: ElementRef, row: ElementRef) -> usize {
     let remaining = 1 + row
         .next_siblings()
@@ -177,7 +177,10 @@ pub fn row_span(cell: ElementRef, row: ElementRef) -> usize {
 mod tests {
     #[test]
     fn explicit_table_styles_survive_and_unsafe_values_are_filtered() {
-        let document = scraper::Html::parse_document("<div class='Article_Content'><table width='800' style='width:90%;border-collapse:collapse;border-spacing:3px;table-layout:fixed;background-color:url(bad)'><tr><td>正文</td></tr></table></div>");
+        let document = scraper::Html::parse_document(
+            "<div class='Article_Content'><table width='800' style='width:90%;border-collapse:collapse;\
+                border-spacing:3px;table-layout:fixed;background-color:url(bad)'><tr><td>正文</td></tr></table></div>",
+        );
         let ir = crate::parser::parse(&document, ".Article_Content", false, None).unwrap();
         assert_eq!(ir.blocks[0].table_styles["width"].value, "90%");
         let output = crate::renderer::render(&ir);
@@ -213,7 +216,11 @@ mod tests {
     }
     #[test]
     fn column_definitions_keep_width_span_and_nested_table_ownership() {
-        let document = scraper::Html::parse_document("<div class='Article_Content'><table><colgroup width='80'><col span='2' style='width:25%'><col width='120'></colgroup><tbody><tr><td><table><colgroup span='3' width='40'><tbody><tr><td>内层</td></tr></tbody></table></td></tr></tbody></table></div>");
+        let document = scraper::Html::parse_document(
+            "<div class='Article_Content'><table><colgroup width='80'><col span='2' style='width:25%'><col \
+                width='120'></colgroup><tbody><tr><td><table><colgroup span='3' width='40'><tbody><tr><td>\
+                内层</td></tr></tbody></table></td></tr></tbody></table></div>",
+        );
         let ir = crate::parser::parse(&document, ".Article_Content", false, None).unwrap();
         let groups = &ir.blocks[0].column_groups;
         assert_eq!(groups.len(), 1);
@@ -238,7 +245,10 @@ mod tests {
     }
     #[test]
     fn cell_styles_preserve_declarations_and_filter_unsafe_output() {
-        let document = scraper::Html::parse_document("<div class='Article_Content'><table><tr><td align='right' width='120' style='border:1px solid red;background-color:yellow'>A</td><td style='background-color:url(bad)'>B</td></tr></table></div>");
+        let document = scraper::Html::parse_document(
+            "<div class='Article_Content'><table><tr><td align='right' width='120' style='border:1px solid \
+                red;background-color:yellow'>A</td><td style='background-color:url(bad)'>B</td></tr></table></div>",
+        );
         let ir = crate::parser::parse(&document, ".Article_Content", false, None).unwrap();
         let cell = &ir.blocks[0].rows[0][0];
         assert_eq!(cell.styles["width"].value, "120px");
@@ -251,7 +261,10 @@ mod tests {
     }
     #[test]
     fn zero_span_stops_at_row_group_boundary() {
-        let document = scraper::Html::parse_document("<div class='Article_Content'><table><tbody><tr><td rowspan='0'>A</td><td>B</td></tr><tr><td>C</td></tr></tbody><tbody><tr><td rowspan='9'>D</td><td>E</td></tr></tbody></table></div>");
+        let document = scraper::Html::parse_document(
+            "<div class='Article_Content'><table><tbody><tr><td rowspan='0'>A</td><td>B</td></tr><tr><td>\
+                C</td></tr></tbody><tbody><tr><td rowspan='9'>D</td><td>E</td></tr></tbody></table></div>",
+        );
         let ir = crate::parser::parse(&document, ".Article_Content", false, None).unwrap();
         assert_eq!(ir.blocks[0].rows[0][0].rowspan, 2);
         assert_eq!(ir.blocks[0].rows[2][0].rowspan, 1);

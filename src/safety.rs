@@ -1,4 +1,4 @@
-/// Accept web links, email links and relative paths. Reject executable schemes.
+/// 允许网页、邮件和相对路径链接，过滤脚本协议。
 pub fn safe_url(value: &str, image: bool) -> bool {
     if value.chars().any(char::is_control) {
         return false;

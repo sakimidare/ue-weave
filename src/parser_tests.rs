@@ -14,7 +14,10 @@ fn explicit_paragraph_spacing_is_retained_without_inference() {
 
 #[test]
 fn word_vml_images_are_preserved_as_image_references() {
-    let document = Html::parse_document("<div class='Article_Content'><p>图前<v:shape style='width:72pt;height:36pt'><v:imagedata src='/word.jpg'></v:imagedata></v:shape>图后</p></div>");
+    let document = Html::parse_document(
+        "<div class='Article_Content'><p>图前<v:shape style='width:72pt;height:36pt'><v:imagedata \
+            src='/word.jpg'></v:imagedata></v:shape>图后</p></div>",
+    );
     let ir = parse(
         &document,
         ".Article_Content",
@@ -41,7 +44,10 @@ fn word_vml_images_are_preserved_as_image_references() {
 
 #[test]
 fn respects_first_base_href_and_rejects_executable_base() {
-    let document = Html::parse_document("<head><base href='../assets/'><base href='https://ignored.example/'></head><div class='Article_Content'><p><a href='file.pdf'>附件</a><img src='photo.png'></p></div>");
+    let document = Html::parse_document(
+        "<head><base href='../assets/'><base href='https://ignored.example/'></head><div \
+            class='Article_Content'><p><a href='file.pdf'>附件</a><img src='photo.png'></p></div>",
+    );
     let ir = parse(
         &document,
         ".Article_Content",
@@ -100,7 +106,11 @@ fn table_caption_is_editable_and_exported_once() {
 
 #[test]
 fn inherited_container_styles_survive_block_boundaries() {
-    let document = Html::parse_document("<div class='Article_Content' style='color:red;font-weight:bold;text-align:right'><div><p>A<span style='font-weight:normal;color:blue'>B</span>C</p><table><tr><td><p>D</p></td></tr></table></div></div>");
+    let document = Html::parse_document(
+        "<div class='Article_Content' style='color:red;font-weight:bold;text-align:right'><div><p>\
+            A<span style='font-weight:normal;color:blue'>B</span>C</p><table><tr><td><p>D</p></td></tr>\
+            </table></div></div>",
+    );
     let ir = parse(&document, ".Article_Content", true, None).unwrap();
     assert_eq!(ir.blocks[0].align, "right");
     let runs = &ir.blocks[0].runs;
@@ -115,7 +125,11 @@ fn inherited_container_styles_survive_block_boundaries() {
 
 #[test]
 fn word_residual_styles_map_with_explicit_css_precedence() {
-    let document = Html::parse_document("<div class='Article_Content'><p style='horiz-align:right'><span style='mso-foreground:red;mso-highlight:yellow;text-line-through:double'>文字</span><span style='color:blue;mso-foreground:red;color:green'>标准声明</span></p></div>");
+    let document = Html::parse_document(
+        "<div class='Article_Content'><p style='horiz-align:right'><span style='mso-foreground:red;\
+            mso-highlight:yellow;text-line-through:double'>文字</span><span style='color:blue;\
+            mso-foreground:red;color:green'>标准声明</span></p></div>",
+    );
     let ir = parse(&document, ".Article_Content", true, None).unwrap();
     assert_eq!(ir.blocks[0].align, "right");
     let run = &ir.blocks[0].runs[0];
@@ -171,7 +185,8 @@ fn nested_lists_preserve_groups_and_numbering() {
 
 #[test]
 fn mixed_direct_text_and_blocks_keep_order() {
-    let document = Html::parse_document("<div class='Article_Content'>开头<span>行内</span><p>段落</p>中间<table><tr><td>格前<p>格段</p>格后<img src='/a.png'></td></tr></table>结尾</div>");
+    let document = Html::parse_document("<div class='Article_Content'>开头<span>行内</span><p>段落</p>中间<table><tr><td>格前<p>格段</p>格后<img \
+        src='/a.png'></td></tr></table>结尾</div>");
     let ir = parse(&document, ".Article_Content", false, None).unwrap();
     let output = crate::renderer::render(&ir);
     let parsed = Html::parse_fragment(&output);
@@ -183,7 +198,10 @@ fn mixed_direct_text_and_blocks_keep_order() {
 
 #[test]
 fn nested_tables_render_each_paragraph_once() {
-    let document = Html::parse_document("<div class='Article_Content'><table><tr><td><p>首段</p><table><tr><td><p>内段</p></td></tr></table><p>尾段</p></td></tr></table></div>");
+    let document = Html::parse_document(
+        "<div class='Article_Content'><table><tr><td><p>首段</p><table><tr><td><p>内段</p></td></tr></table>\
+            <p>尾段</p></td></tr></table></div>",
+    );
     let ir = parse(&document, ".Article_Content", false, None).unwrap();
     assert_eq!(ir.blocks.len(), 1);
     assert_eq!(ir.blocks[0].rows[0][0].blocks.len(), 3);
@@ -200,7 +218,10 @@ fn nested_tables_render_each_paragraph_once() {
 
 #[test]
 fn preserves_linked_image_attributes() {
-    let document = Html::parse_document("<div class='Article_Content'><p><a href='/large'><img src='/photo.jpg' alt='图 [一] &quot;说明&quot;' title='标题' width='640' height='151'></a></p></div>");
+    let document = Html::parse_document(
+        "<div class='Article_Content'><p><a href='/large'><img src='/photo.jpg' alt='图 [一] &quot;\
+            说明&quot;' title='标题' width='640' height='151'></a></p></div>",
+    );
     let ir = parse(
         &document,
         ".Article_Content",
@@ -224,7 +245,10 @@ fn preserves_linked_image_attributes() {
 
 #[test]
 fn paragraph_indent_and_line_height_survive_roundtrip() {
-    let document = Html::parse_document("<div class='Article_Content'><p style='text-indent:2em;line-height:1.5em'>正文</p><p style='text-indent:0em;line-height:normal'>取消缩进</p><p>缺省</p></div>");
+    let document = Html::parse_document(
+        "<div class='Article_Content'><p style='text-indent:2em;line-height:1.5em'>正文</p><p \
+            style='text-indent:0em;line-height:normal'>取消缩进</p><p>缺省</p></div>",
+    );
     let ir = parse(&document, ".Article_Content", true, None).unwrap();
     assert_eq!(ir.blocks[0].line_height.as_ref().unwrap().value, "1.5em");
     assert!(ir.blocks[2].line_height.is_none());
@@ -248,7 +272,10 @@ fn paragraph_indent_and_line_height_survive_roundtrip() {
 
 #[test]
 fn table_cells_remain_editable_and_rendered() {
-    let doc = Html::parse_document("<div class='Article_Content'><table><tr><th colspan='2'>Header</th></tr><tr><td rowspan='2'><b>A</b></td><td>B</td></tr><tr><td>C</td></tr></table></div>");
+    let doc = Html::parse_document(
+        "<div class='Article_Content'><table><tr><th colspan='2'>Header</th></tr><tr><td rowspan='2'><b>\
+            A</b></td><td>B</td></tr><tr><td>C</td></tr></table></div>",
+    );
     let ir = parse(&doc, ".Article_Content", false, None).unwrap();
     assert_eq!(ir.blocks[0].rows.len(), 3);
     assert_eq!(ir.blocks[0].rows[0][0].colspan, 2);
@@ -296,9 +323,11 @@ fn explicit_breaks_survive_all_exports() {
 
 #[test]
 fn ueditor_font_and_basestyle_rules() {
-    let doc = Html::parse_document(
-        r#"<div class="Article_Content"><p><font size="3">A</font><sup>B</sup><sub>C</sub><span style="text-decoration:underline line-through">D</span><b>E<span style="font-weight:normal;font-style:italic">F</span>G</b></p></div>"#,
-    );
+    let doc = Html::parse_document(concat!(
+        r#"<div class="Article_Content"><p><font size="3">A</font><sup>B</sup><sub>C</sub>"#,
+        r#"<span style="text-decoration:underline line-through">D</span><b>"#,
+        r#"E<span style="font-weight:normal;font-style:italic">F</span>G</b></p></div>"#,
+    ));
     let ir = parse(&doc, ".Article_Content", false, None).unwrap();
     let runs = &ir.blocks[0].runs;
     assert_eq!(runs[0].font_size.as_deref(), Some("16px"));
@@ -312,7 +341,13 @@ fn ueditor_font_and_basestyle_rules() {
     assert!(html.contains("<u><s>D</s></u>"));
 }
 
-const FIXTURE: &str = r#"<div class="Article_Content"><p>&nbsp;&nbsp;<strong>一、面向对象</strong></p><p>正文 <em>斜体</em> undefinedundefined</p><p><a href="/a.doc"><img class="sudy-attachment-icon" src="icon_doc.gif">附件</a></p><p><img src="image.png"></p><ul><li>列表</li></ul><p style="text-align:right">教务处</p></div>"#;
+const FIXTURE: &str = concat!(
+    r#"<div class="Article_Content"><p>&nbsp;&nbsp;<strong>一、面向对象</strong></p><p>正文 <em>"#,
+    r#"斜体</em> undefinedundefined</p><p><a href="/a.doc">"#,
+    r#"<img class="sudy-attachment-icon" src="icon_doc.gif">附件</a></p><p>"#,
+    r#"<img src="image.png"></p><ul><li>列表</li></ul><p style="text-align:right">教务处</p>"#,
+    r#"</div>"#,
+);
 
 #[test]
 fn parses_editor_specific_structure() {
@@ -356,9 +391,11 @@ fn resolves_relative_links_against_source_url() {
 
 #[test]
 fn preserves_common_ueditor_inline_styles() {
-    let document = Html::parse_document(
-        r#"<div class="Article_Content"><p><span style="font-family:宋体;font-size:16px;color:#f00;background-color:#ff0;vertical-align:super"><b>x</b></span></p></div>"#,
-    );
+    let document = Html::parse_document(concat!(
+        r#"<div class="Article_Content"><p>"#,
+        r#"<span style="font-family:宋体;font-size:16px;color:#f00;"#,
+        r#"background-color:#ff0;vertical-align:super"><b>x</b></span></p></div>"#,
+    ));
     let ir = parse(&document, ".Article_Content", false, None).unwrap();
     let run = &ir.blocks[0].runs[0];
     assert_eq!(run.font_family.as_deref(), Some("宋体"));
@@ -369,7 +406,8 @@ fn preserves_common_ueditor_inline_styles() {
 }
 #[test]
 fn unknown_wrappers_preserve_nested_paragraph_boundaries() {
-    let document = Html::parse_document("<div class='Article_Content'>前<custom-box style='font-weight:bold'>甲<p>乙</p><custom-inner><p>丙</p></custom-inner>丁</custom-box><figure><figcaption>图注</figcaption></figure>后</div>");
+    let document = Html::parse_document("<div class='Article_Content'>前<custom-box style='font-weight:bold'>甲<p>乙</p><custom-inner><p>\
+        丙</p></custom-inner>丁</custom-box><figure><figcaption>图注</figcaption></figure>后</div>");
     let ir = parse(&document, ".Article_Content", false, None).unwrap();
     let texts: Vec<String> = ir
         .blocks
@@ -404,7 +442,10 @@ fn list_item_values_reset_numbering_in_all_exports() {
 }
 #[test]
 fn css_comments_and_priority_match_diagnostics() {
-    let document = Html::parse_document("<div class='Article_Content'><p style='/* note; */ text-align:right !/*x*/important;text-align:left;/* end */'>正文</p></div>");
+    let document = Html::parse_document(
+        "<div class='Article_Content'><p style='/* note; */ text-align:right !/*x*/important;\
+            text-align:left;/* end */'>正文</p></div>",
+    );
     let ir = parse(&document, ".Article_Content", false, None).unwrap();
     assert_eq!(ir.blocks[0].align, "right");
     assert!(crate::renderer::render(&ir).contains("text-align:right"));
@@ -430,7 +471,11 @@ fn shorthand_paragraph_spacing_survives_html_roundtrip() {
 }
 #[test]
 fn inherited_line_height_has_resolvable_provenance() {
-    let document = Html::parse_document("<body style='line-height:9'><div class='Article_Content' style='line-height:1.5'><p>甲</p><p style='line-height:initial'>乙</p><div style='line-height:2em'><p style='line-height:inherit'>丙</p></div></div></body>");
+    let document = Html::parse_document(
+        "<body style='line-height:9'><div class='Article_Content' style='line-height:1.5'><p>甲</p><p \
+            style='line-height:initial'>乙</p><div style='line-height:2em'><p style='line-height:inherit'>\
+            丙</p></div></div></body>",
+    );
     let ir = parse(&document, ".Article_Content", false, None).unwrap();
     for (index, value) in ["1.5", "normal", "2em"].iter().enumerate() {
         let evidence = ir.blocks[index].line_height.as_ref().unwrap();
@@ -446,7 +491,12 @@ fn inherited_line_height_has_resolvable_provenance() {
 }
 #[test]
 fn inherited_font_keywords_and_resets_are_scoped() {
-    let document = Html::parse_document("<div class='Article_Content'><p style='font-family:Example;font-size:20px;color:red;font-weight:bold;font-style:italic'>甲<span style='font-family:inherit;font-size:unset;color:INHERIT'>乙</span><b style='font-weight:initial;font-style:initial;font-family:initial;font-size:initial;color:initial'>丙</b>丁</p></div>");
+    let document = Html::parse_document(
+        "<div class='Article_Content'><p style='font-family:Example;font-size:20px;color:red;\
+            font-weight:bold;font-style:italic'>甲<span style='font-family:inherit;font-size:unset;\
+            color:INHERIT'>乙</span><b style='font-weight:initial;font-style:initial;font-family:initial;\
+            font-size:initial;color:initial'>丙</b>丁</p></div>",
+    );
     let ir = parse(&document, ".Article_Content", false, None).unwrap();
     let runs = &ir.blocks[0].runs;
     assert_eq!(runs.len(), 4);
@@ -464,7 +514,10 @@ fn inherited_font_keywords_and_resets_are_scoped() {
 }
 #[test]
 fn legacy_list_types_preserve_case_and_css_precedence() {
-    let document = Html::parse_document("<div class='Article_Content'><ol type='A'><li>甲</li></ol><ol type='i'><li>乙</li></ol><ol type='a' style='list-style-type:upper-roman'><li>丙</li></ol><ul type='SQUARE'><li>丁</li></ul></div>");
+    let document = Html::parse_document(
+        "<div class='Article_Content'><ol type='A'><li>甲</li></ol><ol type='i'><li>乙</li></ol><ol \
+            type='a' style='list-style-type:upper-roman'><li>丙</li></ol><ul type='SQUARE'><li>丁</li></ul></div>",
+    );
     let ir = parse(&document, ".Article_Content", false, None).unwrap();
     for (block, expected) in
         ir.blocks
@@ -486,7 +539,10 @@ fn legacy_list_types_preserve_case_and_css_precedence() {
 }
 #[test]
 fn ueditor_custom_list_type_keeps_evidence_and_reports_visual_limits() {
-    let document = Html::parse_document("<div class='Article_Content'><ol class='custom_cn list-paddingleft-1'><li class='list-cn-1-1'>甲</li><li>乙</li></ol></div>");
+    let document = Html::parse_document(
+        "<div class='Article_Content'><ol class='custom_cn list-paddingleft-1'><li class='list-cn-1-1'>\
+            甲</li><li>乙</li></ol></div>",
+    );
     let ir = parse(&document, ".Article_Content", false, None).unwrap();
     let evidence = ir.blocks[0]
         .list
@@ -507,7 +563,10 @@ fn ueditor_custom_list_type_keeps_evidence_and_reports_visual_limits() {
 }
 #[test]
 fn cleaned_block_text_matches_runs_and_code_has_diagnostics() {
-    let document = Html::parse_document("<div class='Article_Content'><p>甲undefinedundefined<br>乙<script>忽略</script></p><pre>代码undefinedundefined\n第二行</pre></div>");
+    let document = Html::parse_document(
+        "<div class='Article_Content'><p>甲undefinedundefined<br>乙<script>忽略</script></p><pre>\
+        代码undefinedundefined\n第二行</pre></div>",
+    );
     let ir = parse(&document, ".Article_Content", false, None).unwrap();
     assert_eq!(ir.blocks[0].text, "甲\n乙");
     assert_eq!(ir.blocks[1].text, "代码\n第二行");
@@ -532,7 +591,11 @@ fn cleaned_block_text_matches_runs_and_code_has_diagnostics() {
 }
 #[test]
 fn table_row_groups_preserve_distinct_bodies_and_source_nodes() {
-    let document = Html::parse_document("<div class='Article_Content'><table><thead><tr><th>表头</th></tr></thead><tbody><tr><td rowspan='0'>甲</td></tr></tbody><tbody><tr><td>乙</td></tr></tbody><tfoot><tr><td>合计</td></tr></tfoot></table></div>");
+    let document = Html::parse_document(
+        "<div class='Article_Content'><table><thead><tr><th>表头</th></tr></thead><tbody><tr><td \
+            rowspan='0'>甲</td></tr></tbody><tbody><tr><td>乙</td></tr></tbody><tfoot><tr><td>合计</td></tr>\
+            </tfoot></table></div>",
+    );
     let ir = parse(&document, ".Article_Content", false, None).unwrap();
     let groups = &ir.blocks[0].row_groups;
     assert_eq!(groups.len(), 4);
@@ -551,7 +614,10 @@ fn table_row_groups_preserve_distinct_bodies_and_source_nodes() {
 }
 #[test]
 fn word_spacing_and_dimensions_map_without_discarding_units() {
-    let document = Html::parse_document("<div class='Article_Content'><p style='mso-margin-alt:3pt 0 6pt;margin-top:2px'>正文</p><table><tr><td style='mso-padding-alt:2pt 4pt;mso-width:5cm;mso-height:20pt'>单元格</td></tr></table></div>");
+    let document = Html::parse_document(
+        "<div class='Article_Content'><p style='mso-margin-alt:3pt 0 6pt;margin-top:2px'>正文</p><table>\
+            <tr><td style='mso-padding-alt:2pt 4pt;mso-width:5cm;mso-height:20pt'>单元格</td></tr></table></div>",
+    );
     let ir = parse(&document, ".Article_Content", false, None).unwrap();
     assert_eq!(ir.blocks[0].spacing["margin-top"].value, "2px");
     assert_eq!(ir.blocks[0].spacing["margin-bottom"].value, "6pt");
@@ -569,7 +635,10 @@ fn word_spacing_and_dimensions_map_without_discarding_units() {
 }
 #[test]
 fn image_css_dimensions_and_link_survive_exports() {
-    let document = Html::parse_document("<div class='Article_Content'><p><a href='https://example.org'><img src='images/test.png' width='800' style='width:50%;height:120px' alt='图示'></a></p></div>");
+    let document = Html::parse_document(
+        "<div class='Article_Content'><p><a href='https://example.org'><img src='images/test.png' \
+            width='800' style='width:50%;height:120px' alt='图示'></a></p></div>",
+    );
     let ir = parse(&document, ".Article_Content", false, None).unwrap();
     let html = crate::renderer::render(&ir);
     assert!(html.contains("width:50%;height:120px"));
@@ -580,7 +649,10 @@ fn image_css_dimensions_and_link_survive_exports() {
 }
 #[test]
 fn word_paragraph_structure_is_evidenced_without_removing_markers() {
-    let document = Html::parse_document("<div class='Article_Content'><p class='MsoListParagraph'>1. 甲</p><p style='mso-list:l0 level2 lfo1'>a) 乙</p><p class='MsoHeading'>标题</p><p>1. 普通段落</p></div>");
+    let document = Html::parse_document(
+        "<div class='Article_Content'><p class='MsoListParagraph'>1. 甲</p><p style='mso-list:l0 level2 \
+            lfo1'>a) 乙</p><p class='MsoHeading'>标题</p><p>1. 普通段落</p></div>",
+    );
     for disabled in [false, true] {
         let ir = parse(&document, ".Article_Content", disabled, None).unwrap();
         assert_eq!(ir.blocks[0].text, "1. 甲");
@@ -606,7 +678,8 @@ fn word_paragraph_structure_is_evidenced_without_removing_markers() {
 }
 #[test]
 fn extension_attributes_and_empty_wrappers_have_complete_treatments() {
-    let document = Html::parse_document("<div class='Article_Content'><span></span><div></div><p><a href='file.doc' sudyfile-attr='{}' isupload='true'><img class='sudy-attachment-icon' src='icon_doc.gif'>附件</a></p></div>");
+    let document = Html::parse_document("<div class='Article_Content'><span></span><div></div><p><a href='file.doc' sudyfile-attr='{}' \
+        isupload='true'><img class='sudy-attachment-icon' src='icon_doc.gif'>附件</a></p></div>");
     let ir = parse(&document, ".Article_Content", false, None).unwrap();
     for kind in ["empty-element", "ue-or-word-attribute", "attachment-icon"] {
         let records: Vec<_> = ir.warnings.iter().filter(|w| w["kind"] == kind).collect();

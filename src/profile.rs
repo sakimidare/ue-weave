@@ -1,4 +1,4 @@
-//! Output-only policies. Canonical IR and source snapshots remain editable evidence.
+//! 导出格式预设，应用于文章结构的输出副本。
 use crate::model::{Block, Ir, Run};
 use serde_json::{json, Value};
 
@@ -325,7 +325,7 @@ fn trim_leading_spaces(block: &mut Block, changes: &mut Vec<Value>, record_chang
     if !matches!(block.kind.as_str(), "paragraph" | "heading" | "signature") {
         return;
     }
-    // Keep explicitly preformatted content and inline code intact.
+    // 保留预格式化内容和行内代码。
     let fragment = scraper::Html::parse_fragment(&block.raw_html);
     if fragment
         .tree
@@ -390,7 +390,13 @@ fn diff(before: &Value, after: &Value, path: &str, sources: &[Value], out: &mut 
     match (before, after) {
         (Value::Object(a), Value::Object(b)) => {
             for (key, value) in a {
-                diff(value, b.get(key).unwrap_or(&Value::Null), &format!("{path}.{key}"), sources, out);
+                diff(
+                    value,
+                    b.get(key).unwrap_or(&Value::Null),
+                    &format!("{path}.{key}"),
+                    sources,
+                    out,
+                );
             }
         }
         (Value::Array(a), Value::Array(b)) if a.len() == b.len() => {
@@ -398,7 +404,15 @@ fn diff(before: &Value, after: &Value, path: &str, sources: &[Value], out: &mut 
                 diff(old, new, &format!("{path}[{index}]"), sources, out);
             }
         }
-        _ => out.push(json!({"field":path,"original":before,"value":after,"source_nodes":sources,"confidence":"high","inferred":false,"reason":"按输出预设和开关转换格式"})),
+        _ => out.push(json!({
+            "field": path,
+            "original": before,
+            "value": after,
+            "source_nodes": sources,
+            "confidence": "high",
+            "inferred": false,
+            "reason": "按输出预设和开关转换格式",
+        })),
     }
 }
 
@@ -407,7 +421,9 @@ mod tests {
     use super::*;
     #[test]
     fn leading_spaces_are_cleaned_across_runs_only_in_output() {
-        let document = scraper::Html::parse_document("<div class='Article_Content'><p> &nbsp;<span>　\t</span><b> 标题</b> 中间&nbsp;空格<br>  下一行</p><h2>&nbsp;标题</h2><p style='text-align:right'>　教务处</p><pre>  code\n  next</pre><p style='white-space:pre-wrap'>  保留</p><p>  <code>code</code></p><p><img src='a.png'>  图片后</p></div>");
+        let document = scraper::Html::parse_document("<div class='Article_Content'><p> &nbsp;<span>　\t</span><b> 标题</b> 中间&nbsp;空格<br>  下一行</p><h2>\
+            &nbsp;标题</h2><p style='text-align:right'>　教务处</p><pre>  code\n  next</pre><p \
+            style='white-space:pre-wrap'>  保留</p><p>  <code>code</code></p><p><img src='a.png'>  图片后</p></div>");
         let source = crate::parser::parse(&document, ".Article_Content", true, None).unwrap();
         let snapshot = serde_json::to_string(&source).unwrap();
         let output = prepare(&source, Profile::Aggressive.settings());
@@ -459,7 +475,11 @@ mod tests {
         let settings = options.resolve(Profile::Aggressive);
         assert!(settings.strip_font_family);
         assert!(!settings.strip_font_size);
-        let document = scraper::Html::parse_document("<div class='Article_Content'><p style='line-height:2;margin-top:8px'><span style='font-family:Example;font-size:20px;color:red;background-color:yellow'>正文</span><img src='photo.png' width='100' height='80'></p></div>");
+        let document = scraper::Html::parse_document(
+            "<div class='Article_Content'><p style='line-height:2;margin-top:8px'><span \
+                style='font-family:Example;font-size:20px;color:red;background-color:yellow'>正文</span><img \
+                src='photo.png' width='100' height='80'></p></div>",
+        );
         let source = crate::parser::parse(&document, ".Article_Content", true, None).unwrap();
         let output = prepare(&source, settings);
         let html = crate::renderer::render(&output.ir);
@@ -480,7 +500,11 @@ mod tests {
 
     #[test]
     fn profiles_preserve_semantics_and_canonical_evidence() {
-        let document = scraper::Html::parse_document("<div class='Article_Content'><p style='text-align:center;text-indent:2em;line-height:2;margin-top:8px'><span style='font-family:Example;font-size:20px;color:red;background-color:yellow'><b><u>正文</u></b></span><a href='https://example.org'>链接</a><img src='photo.png'></p><p><br></p><table width='500'><tr><td style='color:red;width:300px'><i>单元格</i></td></tr></table></div>");
+        let document = scraper::Html::parse_document("<div class='Article_Content'><p style='text-align:center;text-indent:2em;line-height:2;\
+            margin-top:8px'><span style='font-family:Example;font-size:20px;color:red;\
+            background-color:yellow'><b><u>正文</u></b></span><a href='https://example.org'>链接</a><img \
+            src='photo.png'></p><p><br></p><table width='500'><tr><td style='color:red;width:300px'><i>\
+            单元格</i></td></tr></table></div>");
         let source = crate::parser::parse(&document, ".Article_Content", true, None).unwrap();
         let snapshot = serde_json::to_string(&source).unwrap();
         let conservative = prepare(&source, Profile::Conservative.settings());

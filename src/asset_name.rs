@@ -1,4 +1,4 @@
-//! Response and source filenames, normalized into portable path components.
+//! 从响应及来源地址提取文件名，并整理为跨平台可用的路径部分。
 use url::Url;
 
 fn decode(value: &str) -> String {

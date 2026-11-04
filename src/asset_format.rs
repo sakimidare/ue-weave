@@ -1,4 +1,4 @@
-//! Container signatures validate extensions; unrecognized data keeps its filename.
+//! 按文件内容签名检查扩展名，未知类型保留原文件名。
 use crate::error::AssetError;
 
 pub struct Format {

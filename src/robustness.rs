@@ -1,4 +1,4 @@
-//! Deterministic boundary corpus, independent of network availability.
+//! 使用确定性的边界样本验证解析，无需网络。
 #[test]
 fn mixed_containers_keep_text_and_resource_order() {
     for body in [
