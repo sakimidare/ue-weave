@@ -117,12 +117,12 @@ fn rate_limit_and_truncated_body_are_retried() {
 #[test]
 fn timeout_and_tls_report_underlying_causes() {
     let (url, server) = server(vec![(OK, Duration::from_millis(150))]);
-    let client = Client::builder()
+    let timeout_client = Client::builder()
         .no_proxy()
         .timeout(Duration::from_millis(50))
         .build()
         .unwrap();
-    let error = network::fetch(&client, &url, policy(0), None, &Logger::new(false))
+    let error = network::fetch(&timeout_client, &url, policy(0), None, &Logger::new(false))
         .err()
         .unwrap();
     assert_eq!(error.kind, "timeout");
@@ -131,7 +131,7 @@ fn timeout_and_tls_report_underlying_causes() {
 
     let (url, server) = self::server(vec![(OK, Duration::ZERO)]);
     let error = network::fetch(
-        &client,
+        &crate::network_policy::client(Duration::from_secs(5), true).unwrap(),
         &url.replace("http:", "https:"),
         policy(2),
         None,

@@ -49,6 +49,9 @@ fn classify(error: &(dyn Error + 'static), fallback: &'static str) -> &'static s
     }
     let mut current = Some(error);
     while let Some(source) = current {
+        if source.is::<rustls::Error>() {
+            return "tls";
+        }
         if let Some(error) = source.downcast_ref::<reqwest::Error>() {
             if error.is_timeout() {
                 return "timeout";
@@ -62,7 +65,12 @@ fn classify(error: &(dyn Error + 'static), fallback: &'static str) -> &'static s
                 return "timeout";
             }
         }
-        current = source.source();
+        // io::Error can wrap the TLS error without exposing it as source().
+        current = source
+            .downcast_ref::<std::io::Error>()
+            .and_then(std::io::Error::get_ref)
+            .map(|inner| inner as &(dyn Error + 'static))
+            .or_else(|| source.source());
     }
     // TLS and DNS backends expose their diagnostics through the source chain.
     let message = chain(error.source().unwrap_or(error)).to_lowercase();
@@ -247,6 +255,19 @@ pub fn fetch(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn typed_tls_errors_stop_retries_even_without_tls_in_message() {
+        let tls = rustls::Error::General("record overflow".into());
+        let wrapped = std::io::Error::other(std::io::Error::other(tls));
+        let error = failure("https://example.org/", wrapped, "connect");
+        assert_eq!(error.kind, "tls");
+        assert!(!transient(&error));
+
+        let reset = std::io::Error::from(std::io::ErrorKind::ConnectionAborted);
+        let error = failure("https://example.org/", reset, "connect");
+        assert_eq!(error.kind, "connect");
+        assert!(transient(&error));
+    }
     #[test]
     fn classifies_nested_dns_error_and_retains_cause_chain() {
         let error = std::io::Error::other(std::io::Error::other(

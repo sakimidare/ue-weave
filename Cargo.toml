@@ -9,7 +9,8 @@ exclude = ["vendor/", "output/", "acceptance-output/", "profile-examples/"]
 encoding_rs = "0.8"
 clap = { version = "4", features = ["derive"] }
 html-escape = "0.2"
-reqwest = { version = "0.12", features = ["blocking", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+rustls = { version = "0.23", default-features = false }
 scraper = "0.22"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
