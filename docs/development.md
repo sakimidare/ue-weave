@@ -4,6 +4,20 @@
 
 本文中的 IR 指程序内部及 JSON 输出使用的文章结构，DOM 指 HTML 解析后的节点树。
 
+## 库接口与执行流程
+
+`lib.rs` 提供 `Article::from_html`、`html`、`markdown`、`typst` 和 `json`，调用方可直接解析已加载的文章并生成文档。库错误通过 `Error::code()` 返回与 CLI 一致的编号。公开 API 使用中文文档，由 `missing_docs` 检查覆盖。
+
+`main.rs` 调用命令入口；`cli.rs` 管理 clap 参数和退出状态；`pipeline.rs` 依次读取输入、解析正文、处理资源、生成文件和汇报结果。URL 输入与本地文件通过 `Source` 枚举区分。一次处理按需创建一个网络客户端，网页与资源下载共用客户端及重试设置。
+
+错误路径使用 clap 的部分解析结果取得颜色和 JSON 选项，遵循 `--` 分隔符及选项值的边界。解析在遇到错误参数时停止；需要指定错误输出方式时，将 `--json`、`--color` 放在可能出错的参数前。
+
+## 文章 JSON 与解析记录
+
+`document.rs` 定义文章 JSON：文章信息、正文格式和资源。格式字段保存具体值，空值和默认布尔值省略。`model.rs` 定义解析数据，供日志、校验和格式处理使用。`ir_format.rs` 负责读取 JSON 并转换为渲染器使用的数据。
+
+正文块、文字片段和资源通过 `source_nodes` 引用 `original_nodes` 中的节点。节点记录包含 ID、父子关系、标签、属性和解码后的文本；节点 ID 在同一份文档中唯一。读取 JSON 时检查引用、父子关系和循环。用户新增的内容可以省略来源引用。
+
 ## 还原规则与报告
 
 解析流程基于静态 HTML 节点和属性。格式来源包括语义标签、内联样式、UEditor 标记和 Word 粘贴残留。
@@ -18,9 +32,9 @@
 
 UEditor 的保存结果是 HTML。结构还原以这份 HTML 中的内容为依据；原始 Word 精确样式、编辑操作历史和已被过滤的属性记为未知项。网页中明确存在的字体、字号、颜色及间距写入 IR。
 
-`--json` 的终端输出包含格式预设、开关和格式修改记录，以及推断、未知项和下载错误。结构化正文中的 `metadata.content_integrity` 记录正文文字及顺序的检查结果。
+`--json` 的终端输出包含格式预设、开关和格式修改记录，以及推断、未知项和下载错误。终端结果中的 `content_integrity` 记录正文文字及顺序的检查结果。
 
-`metadata.resource_integrity` 记录还原前后图片、超链接和 PDF 地址的数量是否一致。
+终端结果中的 `resource_integrity` 记录还原前后图片、超链接和 PDF 地址的数量是否一致。
 
 ### 资源下载
 
@@ -30,7 +44,7 @@ UEditor 的保存结果是 HTML。结构还原以这份 HTML 中的内容为依�
 
 附件文件名依次参考响应头 `Content-Disposition`（包括 UTF-8 `filename*`）、附件标题和最终 URL。中文名称保留，路径分隔符转换为普通字符。ZIP 文件可保留 DOCX、XLSX、PPTX、EPUB 等原来的扩展名，OLE 文件可保留 DOC、XLS、PPT 等扩展名；记录中的 `detected_type` 表示检测到的容器类型。其他数据文件保留原来的扩展名，内容类型记为 `unknown`。内容签名与扩展名冲突时调整扩展名，并写入处理记录；程序、脚本或 HTML 等可执行内容使用 `.download`。文件名和内容类型均未提供扩展名时使用 `.bin`。资源以普通数据文件权限创建，同名文件使用新文件名。
 
-资源清单的 `download` 字段记录 `requested_url`、`final_url`、`status`、`content_type`、`size`、`sha256`、`local_path`，以及原始文件名、文件名来源、检测到的内容类型和命名调整。IR 再导出时核对已有 SHA-256。修改资源内容后，同时更新对应的资源记录。目录和符号链接的实际位置按资源根目录校验。
+下载器记录请求地址、最终地址、响应状态、内容类型、大小、SHA-256 和本地路径。文章 JSON 中的资源包含地址、名称和本地路径。目录和符号链接的实际位置按资源根目录校验。
 
 ### 样式与工程检查
 
@@ -38,9 +52,11 @@ UEditor 的保存结果是 HTML。结构还原以这份 HTML 中的内容为依�
 
 项目使用 Rust 1.98.1 及以上版本。CI 配置覆盖 Linux、Windows、macOS 的 stable 工具链，并单独检查 1.98.1；执行格式检查、Clippy、测试和 release 构建。测试包含本地网络服务、混合容器、Office 命名空间及确定性生成的畸形输入。
 
+`rust-toolchain.toml` 选择 stable，并安装 rustfmt 和 Clippy。Cargo 配置禁止 unsafe，Clippy 默认将告警视为错误；release 使用 thin LTO 并剥离符号。CI 缓存 Rust 构建产物，独立运行 cargo-audit；Dependabot 每周检查 Rust 依赖及 Actions 更新。贡献约定见 [CONTRIBUTING.md](../CONTRIBUTING.md)。
+
 UEditor 的参考提交和许可证位置见 [规则来源](ueditor-reference.md)。
 
-当前格式支持集中在语义标签和内联样式。外部样式表、动态脚本、复杂 CSS 和部分 Word 自动编号属于待支持项。布局表格沿用表格结构；选择 JSON 输出时，可以查看记录的 HTML 标签和属性。
+格式提取使用 HTML 标签和内联样式，布局表格按表格结构保存。
 
 ### 编码
 
@@ -48,13 +64,29 @@ UEditor 的参考提交和许可证位置见 [规则来源](ueditor-reference.md
 
 ### 日志
 
+日志格式与编号见[日志编号](diagnostics.md)。错误和警告通过枚举建模，终端及 JSON 使用相同编号。
+
+`diagnostic/warning.rs` 的 `WarningKind` 管理警告和 W 编号，`diagnostic/note.rs` 的 `NoteKind` 管理提示和 N 编号。`DiagnosticKind` 组合两类枚举，`Diagnostic` 保存详情并统一序列化；等级由枚举类别确定。网络重试使用 N0028，具体网络错误码放在详情中。
+
+`diagnostic/details.rs` 集中定义详情字段。布尔状态、属性名、错误编号和来源编号数组使用具体类型；原始值及转换结果可保存不同形态的 JSON 值。构造诊断时使用结构体字段，反序列化时检查未知字段和字段类型。
+
+`thiserror` 定义错误消息，`anstyle` 定义颜色和强调样式，`anstream` 负责终端适配与颜色输出。`--color auto|always|never` 控制颜色；日志写入 stderr。
+
+`--explain CODE` 的解释写入 stdout；首行编号和标题按错误、警告、提示分别使用红、黄、青色，正文保持普通颜色。`--explain` 可与 `--color` 组合使用。
+
+`--verbose` 依次展示格式化 HTML 上下文、当前输出预设处理后的文本及提示，通过节点 ID 关联两段内容。HTML 保留标签、属性和实体，标注相关属性值或节点；输出文本标注对应文字，无文字输出的节点单独提示。`log/context.rs` 生成 HTML 片段，`log/output_context.rs` 索引输出文字，`log/render.rs` 使用 `annotate-snippets` 渲染，并通过 `line_numbering(false)` 关闭行号。上下文索引仅在详细日志开启时建立。
+
+`log/layout.rs` 使用 `comfy-table` 将 HTML 与输出文字左右排列，对齐两侧标注行；库负责 ANSI 样式和 Unicode 显示宽度。`terminal_size` 读取 stderr 所在终端的宽度，少于 100 列时上下排列，无法读取宽度时使用 120 列。
+
 `--verbose` 显示输入来源、字节数、选择器、输出目录和结果统计。错误信息包含处理阶段及相关 URL 或文件路径，例如：
 
 ```text
-ue-weave: error: 正文选择器未找到：.missing。可使用 --selector content=CSS 指定正文容器
+error[E0007]: 正文选择器未找到：.missing。可使用 --selector content=CSS 指定正文容器
 ```
 
 网页、图片和附件共用网络请求与重试逻辑。默认每次请求超时 30 秒，临时失败最多重试 2 次，间隔按 250ms、500ms、1s、2s、4s 递增。
+
+DNS 解析器用 `RoutingError` 包装地址解析及网段检查错误。请求分类检查这些类型、`rustls::Error`、`reqwest::Error` 和 `io::ErrorKind`；未知错误采用请求阶段提供的分类。读取大小上限由 `network::MAX_BODY_SIZE` 统一定义。
 
 超时、DNS 解析、连接故障、响应读取中断，以及 HTTP 408、429、500、502、503、504 会触发有限重试。HTTP 403、404 和 TLS 证书或协议错误直接返回。`Retry-After` 为 0–30 秒时按要求等待；更长等待或日期格式会结束当前请求，并输出原因。
 
@@ -86,6 +118,7 @@ cargo build --release
 
 | 模块 | 职责 |
 | --- | --- |
+| `lib.rs`、`cli.rs`、`pipeline.rs` | 库接口、命令行参数和执行流程 |
 | `model.rs` | JSON IR 定义 |
 | `parser.rs`、`inline.rs`、`table.rs` | DOM 到 IR |
 | `rules.rs`、`css.rs`、`word.rs`、`inference.rs` | 格式识别与推断 |
