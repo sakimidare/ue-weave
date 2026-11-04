@@ -177,7 +177,7 @@ impl Overrides {
 pub fn prepare(source: &Ir, settings: Settings) -> Output {
     let mut ir = source.clone();
     let mut changes = Vec::new();
-    transform(&mut ir.blocks, settings, &mut changes);
+    transform(&mut ir.blocks, settings, &mut changes, true);
     diff(
         &json!(source.blocks),
         &json!(ir.blocks),
@@ -191,7 +191,7 @@ pub fn prepare(source: &Ir, settings: Settings) -> Output {
 pub fn prepare_documents(source: &Ir, settings: Settings) -> Output {
     let mut ir = source.clone();
     let mut changes = Vec::new();
-    transform(&mut ir.blocks, settings, &mut changes);
+    transform(&mut ir.blocks, settings, &mut changes, false);
     Output { ir, changes }
 }
 
@@ -216,9 +216,15 @@ fn run(run: &mut Run, settings: Settings) {
     }
 }
 
-fn transform(blocks: &mut Vec<Block>, settings: Settings, changes: &mut Vec<Value>) {
+fn transform(
+    blocks: &mut Vec<Block>,
+    settings: Settings,
+    changes: &mut Vec<Value>,
+    record_changes: bool,
+) {
     for block in blocks.iter_mut() {
-        if settings.native_markdown
+        if record_changes
+            && settings.native_markdown
             && block.kind == "table"
             && crate::markdown::table::header(block) == Some(crate::markdown::table::Header::Empty)
         {
@@ -230,7 +236,7 @@ fn transform(blocks: &mut Vec<Block>, settings: Settings, changes: &mut Vec<Valu
             }));
         }
         if settings.trim_leading_spaces {
-            trim_leading_spaces(block, changes);
+            trim_leading_spaces(block, changes, record_changes);
         }
         if settings.strip_line_height {
             block.line_height = None;
@@ -272,7 +278,7 @@ fn transform(blocks: &mut Vec<Block>, settings: Settings, changes: &mut Vec<Valu
         if settings.strip_background_color {
             block.table_styles.remove("background-color");
         }
-        transform(&mut block.children, settings, changes);
+        transform(&mut block.children, settings, changes, record_changes);
         for cell in block.rows.iter_mut().flatten() {
             if settings.strip_table_dimensions {
                 cell.styles.remove("width");
@@ -299,7 +305,7 @@ fn transform(blocks: &mut Vec<Block>, settings: Settings, changes: &mut Vec<Valu
             for item in &mut cell.runs {
                 run(item, settings);
             }
-            transform(&mut cell.blocks, settings, changes);
+            transform(&mut cell.blocks, settings, changes, record_changes);
         }
     }
     if settings.drop_empty_paragraphs {
@@ -315,7 +321,7 @@ fn transform(blocks: &mut Vec<Block>, settings: Settings, changes: &mut Vec<Valu
     }
 }
 
-fn trim_leading_spaces(block: &mut Block, changes: &mut Vec<Value>) {
+fn trim_leading_spaces(block: &mut Block, changes: &mut Vec<Value>, record_changes: bool) {
     if !matches!(block.kind.as_str(), "paragraph" | "heading" | "signature") {
         return;
     }
@@ -347,17 +353,19 @@ fn trim_leading_spaces(block: &mut Block, changes: &mut Vec<Value>) {
             .trim_start_matches([' ', '\t', '\u{a0}', '\u{3000}']);
         let removed = run.text.len() - trimmed.len();
         if removed > 0 {
-            changes.push(json!({
-                "kind": "leading-spaces",
-                "field": format!("runs[{index}].text"),
-                "original": run.text,
-                "value": trimmed,
-                "removed_prefix": &run.text[..removed],
-                "source_nodes": block.source_nodes,
-                "confidence": "high",
-                "inferred": false,
-                "reason": "按 trim-leading-spaces 开关清理段首排版空白"
-            }));
+            if record_changes {
+                changes.push(json!({
+                    "kind": "leading-spaces",
+                    "field": format!("runs[{index}].text"),
+                    "original": run.text,
+                    "value": trimmed,
+                    "removed_prefix": &run.text[..removed],
+                    "source_nodes": block.source_nodes,
+                    "confidence": "high",
+                    "inferred": false,
+                    "reason": "按 trim-leading-spaces 开关清理段首排版空白"
+                }));
+            }
             run.text.drain(..removed);
             changed = true;
         }
@@ -403,6 +411,9 @@ mod tests {
         let source = crate::parser::parse(&document, ".Article_Content", true, None).unwrap();
         let snapshot = serde_json::to_string(&source).unwrap();
         let output = prepare(&source, Profile::Aggressive.settings());
+        let documents_only = prepare_documents(&source, Profile::Aggressive.settings());
+        assert!(documents_only.changes.is_empty());
+        assert_eq!(json!(documents_only.ir), json!(output.ir));
         assert_eq!(output.ir.blocks[0].text, "标题 中间\u{a0}空格\n  下一行");
         assert_eq!(output.ir.blocks[1].text, "标题");
         assert_eq!(output.ir.blocks[2].text, "教务处");

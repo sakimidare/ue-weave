@@ -75,7 +75,7 @@ pub struct Documents {
 
 pub fn render(ir: &Ir, settings: Settings, options: &Options) -> Documents {
     let mut documents = if settings.include_metadata {
-        metadata_header(ir)
+        metadata_header(ir, options)
     } else {
         Documents::default()
     };
@@ -95,7 +95,7 @@ pub fn render(ir: &Ir, settings: Settings, options: &Options) -> Documents {
     documents
 }
 
-fn metadata_header(ir: &Ir) -> Documents {
+fn metadata_header(ir: &Ir, options: &Options) -> Documents {
     let mut header = Documents::default();
     for (key, label) in [
         ("title", ""),
@@ -112,27 +112,39 @@ fn metadata_header(ir: &Ir) -> Documents {
             continue;
         }
         if key == "title" {
-            header
-                .html
-                .push_str(&format!("<h1>{}</h1>\n", html_escape::encode_text(&value)));
-            header
-                .markdown
-                .push_str(&format!("# {}\n\n", markdown::escape_text(&value)));
-            header.typst.push_str(&format!(
-                "#heading(level: 1, outlined: false)[#text({})]\n\n",
-                typst::quoted(&value)
-            ));
+            if options.formats.contains(&Format::Html) {
+                header
+                    .html
+                    .push_str(&format!("<h1>{}</h1>\n", html_escape::encode_text(&value)));
+            }
+            if options.formats.contains(&Format::Markdown) {
+                header
+                    .markdown
+                    .push_str(&format!("# {}\n\n", markdown::escape_text(&value)));
+            }
+            if options.formats.contains(&Format::Typst) {
+                header.typst.push_str(&format!(
+                    "#heading(level: 1, outlined: false)[#text({})]\n\n",
+                    typst::quoted(&value)
+                ));
+            }
         } else {
             let text = format!("{label}：{value}");
-            header
-                .html
-                .push_str(&format!("<p>{}</p>\n", html_escape::encode_text(&text)));
-            header
-                .markdown
-                .push_str(&format!("{}\n\n", markdown::escape_text(&text)));
-            header
-                .typst
-                .push_str(&format!("#text({})\n\n", typst::quoted(&text)));
+            if options.formats.contains(&Format::Html) {
+                header
+                    .html
+                    .push_str(&format!("<p>{}</p>\n", html_escape::encode_text(&text)));
+            }
+            if options.formats.contains(&Format::Markdown) {
+                header
+                    .markdown
+                    .push_str(&format!("{}\n\n", markdown::escape_text(&text)));
+            }
+            if options.formats.contains(&Format::Typst) {
+                header
+                    .typst
+                    .push_str(&format!("#text({})\n\n", typst::quoted(&text)));
+            }
         }
     }
     if !header.html.is_empty() {
@@ -153,14 +165,14 @@ mod tests {
         ir.metadata.insert("date".into(), serde_json::json!("  "));
         ir.metadata
             .insert("author".into(), serde_json::json!({"value":"ignored"}));
-        assert!(metadata_header(&ir).html.is_empty());
+        assert!(metadata_header(&ir, &Options::default()).html.is_empty());
         ir.metadata.insert(
             "title".into(),
             serde_json::json!("<script>*x*</script>\n#hello"),
         );
         ir.metadata
             .insert("source".into(), serde_json::json!("\"quote\" \\ code"));
-        let header = metadata_header(&ir);
+        let header = metadata_header(&ir, &Options::default());
         assert!(!header.html.contains("<script>"));
         assert!(header.html.contains("&lt;script&gt;"));
         assert!(header.markdown.contains(r"\*x\*"));
