@@ -115,6 +115,7 @@ fn inherited_value(value: Option<String>, parent: &Option<String>) -> Option<Str
 pub(crate) fn text_run(text: &str, context: &RunContext) -> Option<Run> {
     let text = rules::clean_sentinel(text);
     (!text.is_empty()).then(|| Run {
+        source_nodes: Vec::new(),
         line_break: false,
         text,
         bold: context.bold,
@@ -140,6 +141,7 @@ pub(crate) fn image_run(element: ElementRef, context: &RunContext) -> Option<Run
             .attr("src")
             .is_some_and(|value| crate::safety::safe_url(value, true)))
     .then(|| Run {
+        source_nodes: vec![format!("{:?}", element.id())],
         line_break: false,
         image_attributes: Some(crate::model::ImageAttributes {
             alt: element.value().attr("alt").map(str::to_string),
@@ -175,12 +177,14 @@ pub(crate) fn visit_node(element: ElementRef, context: &RunContext, output: &mut
         let mut run =
             text_run(&title, &context.for_element(element)).expect("PDF title is nonempty");
         run.link = Some(rules::absolute_url(context.base_url.as_ref(), &href));
+        run.source_nodes = vec![format!("{:?}", element.id())];
         output.push(run);
         return;
     }
     if element.value().name() == "br" {
         let mut run = text_run("\n", context).expect("newline is nonempty");
         run.line_break = true;
+        run.source_nodes = vec![format!("{:?}", element.id())];
         output.push(run);
         return;
     }
@@ -201,7 +205,8 @@ pub(crate) fn visit_node(element: ElementRef, context: &RunContext, output: &mut
                 visit_node(child_element, &context, output);
             }
         } else if let Node::Text(value) = child.value() {
-            if let Some(run) = text_run(value, &context) {
+            if let Some(mut run) = text_run(value, &context) {
+                run.source_nodes = vec![format!("{:?}", child.id())];
                 output.push(run);
             }
         }

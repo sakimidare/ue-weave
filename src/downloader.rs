@@ -1,3 +1,4 @@
+use crate::diagnostic::{Details, Diagnostic, WarningKind};
 use crate::{
     error::{AssetError, RecoverError, Result},
     log::Logger,
@@ -32,23 +33,25 @@ struct AssetRequest<'a> {
     title: Option<&'a str>,
 }
 
+/// 下载文章附件并将成功下载的链接替换为本地路径，返回下载诊断。
 pub fn download_attachments(
     ir: &mut Ir,
     output: &Path,
     client: &Client,
     policy: Policy,
     logger: &Logger,
-) -> Result<Vec<serde_json::Value>> {
+) -> Result<Vec<Diagnostic>> {
     download_assets(ir, output, client, false, policy, logger)
 }
 
+/// 下载文章图片并更新正文引用，复用传入的客户端与请求设置。
 pub fn download_images(
     ir: &mut Ir,
     output: &Path,
     client: &Client,
     policy: Policy,
     logger: &Logger,
-) -> Result<Vec<serde_json::Value>> {
+) -> Result<Vec<Diagnostic>> {
     download_assets(ir, output, client, true, policy, logger)
 }
 
@@ -59,7 +62,7 @@ fn download_assets(
     images: bool,
     policy: Policy,
     logger: &Logger,
-) -> Result<Vec<serde_json::Value>> {
+) -> Result<Vec<Diagnostic>> {
     let folder = if images { "images" } else { "attachments" };
     let field = if images { "src" } else { "href" };
     let directory = output.join(folder);
@@ -122,7 +125,29 @@ fn download_assets(
         match result {
             Ok(record) => {
                 if record.filename_adjustment.is_some() || record.detected_type == "unknown" {
-                    ir.warnings.push(serde_json::json!({"kind":"asset-format","url":url,"original":record.original_filename,"value":record.local_path,"detected_type":record.detected_type,"reason":record.filename_adjustment.as_deref().unwrap_or("文件内容类型记为 unknown，保留来源扩展名"),"source_nodes":attachment["source_nodes"]}));
+                    ir.warnings.push(Diagnostic::new(
+                        WarningKind::AssetFormat,
+                        Details {
+                            url: Some((url).to_owned()),
+                            original: serde_json::json!(record.original_filename),
+                            value: serde_json::json!(record.local_path),
+                            detected_type: Some((record.detected_type).to_owned()),
+                            reason: Some(
+                                (record
+                                    .filename_adjustment
+                                    .as_deref()
+                                    .unwrap_or("文件内容类型记为 unknown，保留来源扩展名"))
+                                .to_owned(),
+                            ),
+                            source_nodes: attachment["source_nodes"]
+                                .as_array()
+                                .into_iter()
+                                .flatten()
+                                .filter_map(|id| id.as_str().map(str::to_owned))
+                                .collect(),
+                            ..Default::default()
+                        },
+                    ));
                 }
                 let local = record.local_path.clone();
                 downloaded.insert(url.clone(), record.clone());
@@ -132,15 +157,34 @@ fn download_assets(
                 attachment["local_path"] = local.clone().into();
                 for block in &mut ir.blocks {
                     block.visit_runs_mut(&mut |run| {
-                        let target = if images { &mut run.image } else { &mut run.link };
+                        let target = if images {
+                            &mut run.image
+                        } else {
+                            &mut run.link
+                        };
                         if target.as_deref() == Some(&url) {
                             *target = Some(local.clone());
                         }
                     });
                 }
             }
-            Err(error) => errors
-                .push(serde_json::json!({"kind":if images {"image-download"} else {"attachment-download"},"url":url,"code":error.code(),"error":error.to_string(),"network":match &error { AssetError::Network(error) => error.details(), _ => serde_json::Value::Null }})),
+            Err(error) => errors.push(Diagnostic::new(
+                if images {
+                    WarningKind::ImageDownload
+                } else {
+                    WarningKind::AttachmentDownload
+                },
+                Details {
+                    url: Some((url).to_owned()),
+                    error_code: Some((error.code()).to_owned()),
+                    error: Some((error.to_string()).to_owned()),
+                    network: serde_json::json!(match &error {
+                        AssetError::Network(error) => error.details(),
+                        _ => serde_json::Value::Null,
+                    }),
+                    ..Default::default()
+                },
+            )),
         }
     }
     Ok(errors)
@@ -152,7 +196,7 @@ fn fetch_attachment(
     policy: Policy,
     logger: &Logger,
 ) -> std::result::Result<StoredAsset, AssetError> {
-    const LIMIT: u64 = 64 * 1024 * 1024;
+    const LIMIT: u64 = network::MAX_BODY_SIZE;
     let AssetRequest {
         url,
         directory,
@@ -242,7 +286,14 @@ mod tests {
                 .unwrap();
             let _ = stream.read(&mut [0; 2048]);
             let body = b"PK\x03\x04office-container";
-            write!(stream, "HTTP/1.1 200 OK\r\nContent-Disposition: attachment; filename*=UTF-8''%E9%80%9A%E7%9F%A5.docx\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).unwrap();
+            write!(
+                stream,
+                "HTTP/1.1 200 OK\r\nContent-Disposition: attachment; \
+                filename*=UTF-8''%E9%80%9A%E7%9F%A5.docx\r\nContent-Type: \
+                application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            )
+            .unwrap();
             stream.write_all(body).unwrap();
         });
         let dir = std::env::temp_dir().join(format!("ue-office-name-{}", std::process::id()));
@@ -320,7 +371,11 @@ mod tests {
         ));
         fs::create_dir_all(output.join("attachments")).unwrap();
         fs::write(output.join("attachments/0000-a.pdf"), b"existing").unwrap();
-        let html = format!("<div class='Article_Content'><p><a href='{base}/a.pdf'>A</a><a href='{base}/a.pdf'>Again</a><a href='{base}/b/a.pdf'>B</a><a href='{base}/missing.pdf'>Missing</a></p><table><tr><td><a href='{base}/a.pdf'>Table attachment</a></td></tr></table></div>");
+        let html = format!(
+            "<div class='Article_Content'><p><a href='{base}/a.pdf'>A</a><a href='{base}/a.pdf'>Again</a><a \
+                href='{base}/b/a.pdf'>B</a><a href='{base}/missing.pdf'>Missing</a></p><table><tr><td><a \
+                href='{base}/a.pdf'>Table attachment</a></td></tr></table></div>"
+        );
         let html = html
             .replace("</td>", &format!("<img src='{base}/photo.png'></td>"))
             .replace("</p>", &format!("<img src='{base}/photo.png'></p>"));
@@ -370,7 +425,8 @@ mod tests {
             Some(local_image)
         );
         assert_eq!(errors.len(), 1);
-        assert_eq!(errors[0]["code"], "http_status");
+        assert_eq!(errors[0]["code"], "W0006");
+        assert_eq!(errors[0]["error_code"], "E0106");
         assert_eq!(ir.attachments.len(), 5);
         assert_eq!(
             ir.blocks[1].rows[0][0].runs[0].link.as_deref(),

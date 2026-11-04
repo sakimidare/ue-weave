@@ -79,7 +79,7 @@ fn bounded_retries_and_disabled_retries() {
             .unwrap();
         assert_eq!(error.attempts, retries + 1);
         assert_eq!(error.status, Some(503));
-        assert_eq!(error.kind, "http_status");
+        assert_eq!(error.kind, crate::error::NetworkKind::HttpStatus);
         assert_eq!(server.join().unwrap(), retries as usize + 1);
     }
 }
@@ -125,7 +125,7 @@ fn timeout_and_tls_report_underlying_causes() {
     let error = network::fetch(&timeout_client, &url, policy(0), None, &Logger::new(false))
         .err()
         .unwrap();
-    assert_eq!(error.kind, "timeout");
+    assert_eq!(error.kind, crate::error::NetworkKind::Timeout);
     assert!(error.detail.contains("timed out"));
     server.join().unwrap();
 
@@ -139,7 +139,12 @@ fn timeout_and_tls_report_underlying_causes() {
     )
     .err()
     .unwrap();
-    assert_eq!(error.kind, "tls", "{}", error.detail);
+    assert_eq!(
+        error.kind,
+        crate::error::NetworkKind::Tls,
+        "{}",
+        error.detail
+    );
     assert_eq!(error.attempts, 1);
     server.join().unwrap();
 }
@@ -151,7 +156,7 @@ fn size_limit_checks_headers_and_streamed_bytes() {
         let error = network::fetch(&client(), &url, policy(2), Some(1), &Logger::new(false))
             .err()
             .unwrap();
-        assert_eq!(error.kind, "size_limit");
+        assert_eq!(error.kind, crate::error::NetworkKind::SizeLimit);
         assert_eq!(error.attempts, 1);
         server.join().unwrap();
     }

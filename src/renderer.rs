@@ -345,6 +345,7 @@ mod tests {
                 },
                 align: "center".into(),
                 runs: vec![Run {
+                    source_nodes: Vec::new(),
                     line_break: false,
                     text: "标题".into(),
                     bold: true,

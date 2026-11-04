@@ -80,6 +80,7 @@ ue-weave --input page.html --output output/ \
 | `--no-inference` | 关闭启发式推断 |
 | `--json` | 以 JSON 输出运行结果摘要 |
 | `--verbose` | 输出详细阶段日志 |
+| `--color <MODE>` | 日志颜色：auto 自动（默认）、always 始终、never 关闭 |
 
 ## 站点选择器配置
 
@@ -131,10 +132,18 @@ ue-weave --input-ir output/reconstructed.json \
   --output edited-output/ --profile balanced
 ```
 
-输入 JSON 使用 `schema: {"name":"ue-weave-ir","version":1}` 和 `tool` 标识生成工具。导入时检查版本、节点类型、标题级别及表格跨度，错误信息包含 JSON 字段路径。可选格式字段省略时使用缺省值。
+输入 JSON 使用 `schema: {"name":"ue-weave-ir","version":2}` 标识格式。导入时检查版本、节点类型、标题级别及表格跨度，错误信息包含 JSON 字段路径。可选格式字段省略时使用缺省值。
 
-重新导出只需输入 JSON 和其中引用的本地图片、附件。
+重新导出时提供 JSON 和其中引用的本地图片、附件。
+
+JSON 中的 `source_nodes` 对应 `original_nodes` 保存的网页节点，可据此查找原来的文字、属性和上下文。编辑正文时保留这些引用；新增内容可省略。日志和处理理由通过终端输出。
+
+`--verbose` 左侧显示 HTML 上下文，右侧显示清洗后的文字，两侧标注位置对齐。终端不足 100 列时改为上下显示。
 
 资源清单中的 `local_path` 使用 `images/文件名` 或 `attachments/文件名`。资源根目录默认为 JSON 所在目录，也可通过 `--asset-root edited/assets` 指定；此时资源位于 `edited/assets/images/` 和 `edited/assets/attachments/`。
 
-普通正文编辑 `runs`，代码块编辑 `text`。导入时同步更新正文的 `text` 字段。
+普通正文编辑 `runs`，代码块编辑 `text`。标题级别写为 `"level": 2`，行距等格式字段填写具体值。
+
+处理日志通过 `--verbose` 或 `--json` 查看。
+
+终端错误使用 `error[E0001]` 格式，警告使用 `warning[W0001]` 格式。编号含义见[日志编号](diagnostics.md)。

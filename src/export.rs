@@ -1,4 +1,4 @@
-//! Assemble output documents from the selected IR and presentation options.
+//! 根据正文结构及格式选项组装输出文档。
 use crate::{markdown, model::Ir, profile::Settings, renderer, typst};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, clap::ValueEnum)]
@@ -45,12 +45,12 @@ impl Options {
         if self.formats.contains(&Format::Json) {
             files.push((
                 "reconstructed.json".into(),
-                serde_json::to_vec_pretty(ir).map_err(|source| {
-                    crate::error::RecoverError::Serialize {
+                serde_json::to_vec_pretty(&crate::document::from_analysis(ir)).map_err(
+                    |source| crate::error::RecoverError::Serialize {
                         file: "reconstructed.json".into(),
                         source,
-                    }
-                })?,
+                    },
+                )?,
             ));
         }
         for (format, name, content) in [

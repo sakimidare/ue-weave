@@ -1,4 +1,4 @@
-//! Versioned editing contract and contextual input validation.
+//! 文章 JSON 的版本约定及带字段路径的输入检查。
 use crate::{
     error::{RecoverError, Result},
     model::{Block, Ir},
@@ -16,7 +16,7 @@ impl Default for Schema {
     fn default() -> Self {
         Self {
             name: "ue-weave-ir".into(),
-            version: 1,
+            version: 2,
         }
     }
 }
@@ -41,10 +41,11 @@ fn invalid(field: &str, reason: &str) -> RecoverError {
 }
 
 pub fn read(bytes: &[u8], path: &Path) -> Result<Ir> {
-    let value: Value = serde_json::from_slice(bytes).map_err(|source| RecoverError::ReadIr {
-        path: path.into(),
-        source,
-    })?;
+    let mut value: Value =
+        serde_json::from_slice(bytes).map_err(|source| RecoverError::ReadIr {
+            path: path.into(),
+            source,
+        })?;
     value
         .as_object()
         .ok_or_else(|| invalid("$", "需要 JSON 对象"))?;
@@ -52,13 +53,14 @@ pub fn read(bytes: &[u8], path: &Path) -> Result<Ir> {
     if schema["name"] != "ue-weave-ir" {
         return Err(invalid("schema.name", "需要 ue-weave-ir"));
     }
-    if schema["version"] != 1 {
-        return Err(invalid(
-            "schema.version",
-            "当前支持版本 1；请使用支持该版本的工具",
-        ));
+    if schema["version"] != 2 {
+        return Err(invalid("schema.version", "当前支持版本 2"));
     }
-    // Deserialize each node separately so errors identify the edited JSON path.
+    crate::document::validate(&value)?;
+    crate::document::expand(&mut value["blocks"]);
+    value["source"] = value["metadata"]["url"].clone();
+    value["tool"] = serde_json::json!(Tool::default());
+    // 逐条读取节点，错误消息中保留对应的 JSON 字段路径。
     validate_blocks(
         value
             .get("blocks")
@@ -191,7 +193,7 @@ fn validate_runs(value: &Value, path: &str) -> Result<()> {
 
 fn normalize(blocks: &mut [Block]) {
     for block in blocks {
-        // Runs are the editable text source; code blocks keep their literal text.
+        // 文字片段提供可编辑文本，代码块保留字面内容。
         if block.kind != "code_block" && !block.runs.is_empty() {
             block.text = block.runs.iter().map(|run| run.text.as_str()).collect();
         }
@@ -218,7 +220,6 @@ mod tests {
         if value.get("schema").is_none() {
             value["schema"] = json!(Schema::default());
         }
-        value["tool"] = json!(Tool::default());
         read(
             &serde_json::to_vec(&value).unwrap(),
             Path::new("edited.json"),
@@ -229,17 +230,17 @@ mod tests {
         let ir =
             load(json!({"blocks":[{"type":"paragraph","text":"old","runs":[{"text":"edited"}]}]}))
                 .unwrap();
-        assert_eq!(ir.schema.version, 1);
+        assert_eq!(ir.schema.version, 2);
         assert_eq!(ir.blocks[0].text, "edited");
         assert!(!ir.blocks[0].runs[0].bold);
         assert_eq!(ir.blocks[0].align, "unknown");
-        let roundtrip = load(json!(ir)).unwrap();
+        let roundtrip = load(crate::document::from_analysis(&ir)).unwrap();
         assert!(roundtrip.warnings.is_empty());
     }
     #[test]
     fn rejects_future_versions_and_reports_nested_errors() {
         assert!(
-            load(json!({"schema":{"name":"ue-weave-ir","version":2},"blocks":[]}))
+            load(json!({"schema":{"name":"ue-weave-ir","version":3},"blocks":[]}))
                 .err()
                 .unwrap()
                 .to_string()
@@ -252,7 +253,7 @@ mod tests {
                 "blocks[0].rows[0][0].colspan",
             ),
             (
-                json!({"blocks":[{"type":"heading","level":{"value":8}}]}),
+                json!({"blocks":[{"type":"heading","level":8}]}),
                 "blocks[0].level.value",
             ),
         ] {

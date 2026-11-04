@@ -1,7 +1,141 @@
-//! Parsed DOM provenance. Text values are decoded; source bytes belong in the raw snapshot.
+//! 记录解析后 DOM 的来源关系；文字值已经过实体解码。
 use scraper::{ElementRef, Node};
 use serde_json::{json, Value};
 use std::collections::HashMap;
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SourceNode {
+    pub id: String,
+    pub parent: Option<String>,
+    #[serde(default)]
+    pub children: Vec<String>,
+    #[serde(default)]
+    pub tag: String,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub attrs: HashMap<String, String>,
+    #[serde(rename = "type")]
+    pub kind: String,
+}
+
+pub fn validate(document: &Value) -> crate::error::Result<()> {
+    use crate::error::SourceNodeError;
+    let nodes: Vec<SourceNode> = match document.get("original_nodes") {
+        Some(value) => serde_json::from_value(value.clone()).map_err(SourceNodeError::Decode)?,
+        None => Vec::new(),
+    };
+    let mut index = HashMap::new();
+    for (i, node) in nodes.iter().enumerate() {
+        if node.id.is_empty() {
+            return Err(SourceNodeError::EmptyId {
+                field: format!("original_nodes[{i}].id"),
+            }
+            .into());
+        }
+        if index.insert(node.id.as_str(), node).is_some() {
+            return Err(SourceNodeError::DuplicateId {
+                field: format!("original_nodes[{i}].id"),
+                id: node.id.clone(),
+            }
+            .into());
+        }
+        if !matches!(node.kind.as_str(), "element" | "text" | "comment" | "other") {
+            return Err(SourceNodeError::UnknownKind {
+                field: format!("original_nodes[{i}].type"),
+                kind: node.kind.clone(),
+            }
+            .into());
+        }
+    }
+    for node in &nodes {
+        for child in &node.children {
+            if index
+                .get(child.as_str())
+                .is_none_or(|c| c.parent.as_deref() != Some(&node.id))
+            {
+                return Err(SourceNodeError::InvalidChild {
+                    field: format!("original_nodes.{}.children", node.id),
+                    child: child.clone(),
+                }
+                .into());
+            }
+        }
+        if let Some(parent) = &node.parent {
+            if index
+                .get(parent.as_str())
+                .is_none_or(|p| !p.children.contains(&node.id))
+            {
+                return Err(SourceNodeError::InvalidParent {
+                    field: format!("original_nodes.{}.parent", node.id),
+                    parent: parent.clone(),
+                }
+                .into());
+            }
+        }
+    }
+    let mut visited = std::collections::HashSet::new();
+    let mut pending: Vec<_> = nodes.iter().filter(|n| n.parent.is_none()).collect();
+    while let Some(node) = pending.pop() {
+        if !visited.insert(&node.id) {
+            return Err(SourceNodeError::InvalidTree.into());
+        }
+        pending.extend(node.children.iter().map(|id| index[id.as_str()]));
+    }
+    if visited.len() != nodes.len() {
+        return Err(SourceNodeError::InvalidTree.into());
+    }
+    let mut pending = vec![
+        ("blocks".to_string(), &document["blocks"]),
+        ("images".into(), &document["images"]),
+        ("attachments".into(), &document["attachments"]),
+    ];
+    while let Some((path, value)) = pending.pop() {
+        match value {
+            Value::Object(object) => {
+                for (key, value) in object {
+                    let path = format!("{path}.{key}");
+                    if key == "source_nodes" || key == "source_node" {
+                        let refs: Vec<&Value> = if key == "source_node" {
+                            vec![value]
+                        } else {
+                            value
+                                .as_array()
+                                .ok_or_else(|| SourceNodeError::ExpectedReferences {
+                                    field: path.clone(),
+                                })?
+                                .iter()
+                                .collect()
+                        };
+                        for id in refs {
+                            let id = id.as_str().ok_or_else(|| SourceNodeError::ExpectedId {
+                                field: path.clone(),
+                            })?;
+                            if !index.contains_key(id) {
+                                return Err(SourceNodeError::MissingReference {
+                                    field: path.clone(),
+                                    id: id.into(),
+                                }
+                                .into());
+                            }
+                        }
+                    } else {
+                        pending.push((path, value));
+                    }
+                }
+            }
+            Value::Array(array) => pending.extend(
+                array
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| (format!("{path}[{i}]"), v)),
+            ),
+            _ => {}
+        }
+    }
+    Ok(())
+}
 
 pub struct Snapshot {
     pub nodes: Vec<Value>,
@@ -9,6 +143,9 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
+    pub fn resolve(&self, id: &str) -> Option<&str> {
+        self.ids.get(id).map(String::as_str)
+    }
     pub fn capture(root: ElementRef) -> Self {
         let ids: HashMap<_, _> = root
             .descendants()
@@ -69,6 +206,23 @@ impl Snapshot {
 mod tests {
     use super::*;
     use scraper::{Html, Selector};
+
+    #[test]
+    fn rejects_broken_references_duplicate_ids_and_cycles() {
+        let node = json!({"id":"n0","type":"element","tag":"p","parent":null,"children":[]});
+        let mut document = json!({"original_nodes":[node],"blocks":[{"source_nodes":["n0"]}]});
+        validate(&document).unwrap();
+        document["blocks"][0]["source_nodes"] = json!(["missing"]);
+        assert_eq!(validate(&document).unwrap_err().code(), "E0310");
+        document["blocks"] = json!([]);
+        document["original_nodes"] = json!([node.clone(), node]);
+        assert_eq!(validate(&document).unwrap_err().code(), "E0303");
+        document["original_nodes"] = json!([
+            {"id":"a","type":"element","parent":"b","children":["b"]},
+            {"id":"b","type":"element","parent":"a","children":["a"]}
+        ]);
+        assert_eq!(validate(&document).unwrap_err().code(), "E0307");
+    }
 
     #[test]
     fn preserves_text_comments_order_and_resolvable_references() {

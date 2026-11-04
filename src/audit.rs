@@ -1,8 +1,9 @@
-//! Diagnostics derived from the preserved DOM, independently of block extraction.
+//! 从原始 DOM 生成诊断，单独检查正文块提取过程涉及的属性。
+use crate::diagnostic::{Details, Diagnostic, DiagnosticKind, NoteKind, WarningKind};
 use crate::model::Ir;
 use serde_json::json;
 
-/// Elements whose structural or inline meaning has an explicit IR mapping.
+/// 列出已有正文结构或文字格式映射的 HTML 标签。
 fn mapped_element(tag: &str) -> bool {
     if matches!(tag, "thead" | "tbody" | "tfoot") {
         return true;
@@ -46,16 +47,6 @@ fn mapped_element(tag: &str) -> bool {
 }
 
 pub fn append_diagnostics(ir: &mut Ir) {
-    for field in [
-        "original_word_styles",
-        "original_word_fonts",
-        "editor_operation_order",
-        "filterword_deleted_styles",
-        "original_paragraph_spacing",
-        "original_page_setup",
-    ] {
-        ir.warnings.push(json!({"kind":"unrecoverable","field":field,"value":"unknown","confidence":"unknown","reason":"HTML 未记录此原始文档属性，值记为 unknown","source_nodes":[]}));
-    }
     for node in &ir.original_nodes {
         let id = &node["id"];
         let tag = node["tag"].as_str().unwrap_or("");
@@ -68,13 +59,48 @@ pub fn append_diagnostics(ir: &mut Ir) {
             && node["children"].as_array().is_some_and(Vec::is_empty)
             && !attachment_node
         {
-            ir.warnings.push(json!({"kind":"empty-element","original":{"tag":tag,"attrs":node["attrs"]},"removed":true,"ir_field":if tag == "div" {Some("blocks")} else {None},"inferred":false,"confidence":"high","reason":if tag == "div" {"空 div 规范化为空段落；原始节点保留"} else {"空 span 不产生文本片段；原始节点保留"},"source_nodes":[id]}));
+            ir.warnings.push(Diagnostic::new(
+                NoteKind::EmptyElement,
+                Details {
+                    original: serde_json::json!({"tag":tag,"attrs":node["attrs"]}),
+                    removed: Some(true),
+                    ir_field: (if tag == "div" { Some("blocks") } else { None }).map(str::to_owned),
+                    inferred: Some(false),
+                    confidence: Some("high".to_owned()),
+                    reason: Some(
+                        (if tag == "div" {
+                            "空 div 规范化为空段落；原始节点保留"
+                        } else {
+                            "空 span 不产生文本片段；原始节点保留"
+                        })
+                        .to_owned(),
+                    ),
+                    source_nodes: vec![id.as_str().unwrap_or_default().to_owned()],
+                    ..Default::default()
+                },
+            ));
         }
         if node["type"] == "text" {
             let text = node["text"].as_str().unwrap_or("");
             let cleaned = crate::rules::clean_sentinel(text);
             if cleaned != text {
-                ir.warnings.push(json!({"kind":"undefinedundefined","original":text,"value":cleaned,"removed":true,"ir_field":"blocks.text / runs.text","inferred":false,"confidence":"high","reason":"移除已知异常字符串 undefinedundefined；完整原文本保存在节点快照中","source_nodes":[id]}));
+                ir.warnings.push(Diagnostic::new(
+                    NoteKind::Undefinedundefined,
+                    Details {
+                        original: serde_json::json!(text),
+                        value: serde_json::json!(cleaned),
+                        removed: Some(true),
+                        ir_field: Some("blocks.text / runs.text".to_owned()),
+                        inferred: Some(false),
+                        confidence: Some("high".to_owned()),
+                        reason: Some(
+                            ("移除已知异常字符串 undefinedundefined；完整原文本保存在节点快照中")
+                                .to_owned(),
+                        ),
+                        source_nodes: vec![id.as_str().unwrap_or_default().to_owned()],
+                        ..Default::default()
+                    },
+                ));
             }
             let spaces = text.chars().filter(|c| *c == ' ').count();
             let nbsp = text.chars().filter(|c| *c == '\u{a0}').count();
@@ -82,21 +108,79 @@ pub fn append_diagnostics(ir: &mut Ir) {
             for (character, codepoint) in [('\u{200b}', "U+200B"), ('\u{feff}', "U+FEFF")] {
                 let count = text.chars().filter(|c| *c == character).count();
                 if count > 0 {
-                    ir.warnings.push(json!({"kind":"possible-editor-fill-character","original":text,"value":{"codepoint":codepoint,"count":count,"origin":"unknown"},"removed":false,"ir_field":"runs.text","inferred":false,"confidence":"unknown","reason":"检测到 UEditor 填充字符 U+200B 或 U+FEFF；字符写入 runs.text，来源记为 unknown","source_nodes":[id]}));
+                    let value = serde_json::json!({
+                        "codepoint": codepoint, "count": count, "origin": "unknown"
+                    });
+                    ir.warnings.push(Diagnostic::new(
+                        WarningKind::PossibleEditorFillCharacter,
+                        Details {
+                            original: serde_json::json!(text),
+                            value,
+                            removed: Some(false),
+                            ir_field: Some("runs.text".to_owned()),
+                            inferred: Some(false),
+                            confidence: Some("unknown".to_owned()),
+                            reason: Some("文字中包含零宽字符，保留待核对".to_owned()),
+                            source_nodes: vec![id.as_str().unwrap_or_default().to_owned()],
+                            ..Default::default()
+                        },
+                    ));
                 }
             }
             if nbsp > 0 || text.starts_with("  ") {
-                ir.warnings.push(json!({"kind":"whitespace","original":text,"value":{"spaces":spaces,"nbsp":nbsp,"newlines":newlines},"removed":false,"ir_field":"runs.text","inferred":false,"confidence":"high","reason":"统计 HTML 解码后的普通空格、不换行空格和换行数量","source_nodes":[id]}));
+                ir.warnings.push(Diagnostic::new(
+                    NoteKind::Whitespace,
+                    Details {
+                        original: serde_json::json!(text),
+                        value: serde_json::json!({"spaces":spaces,"nbsp":nbsp,"newlines":newlines}),
+                        removed: Some(false),
+                        ir_field: Some("runs.text".to_owned()),
+                        inferred: Some(false),
+                        confidence: Some("high".to_owned()),
+                        reason: Some(
+                            ("统计 HTML 解码后的普通空格、不换行空格和换行数量").to_owned(),
+                        ),
+                        source_nodes: vec![id.as_str().unwrap_or_default().to_owned()],
+                        ..Default::default()
+                    },
+                ));
             }
         }
         if ["script", "style", "iframe", "object", "embed"].contains(&tag) {
-            ir.warnings.push(json!({"kind":"excluded-element","original":tag,"removed":true,"ir_field":null,"inferred":false,"confidence":"high","reason":"正文重建排除可执行或外部嵌入内容；原节点保留在快照中","source_nodes":[id]}));
+            ir.warnings.push(Diagnostic::new(
+                WarningKind::ExcludedElement,
+                Details {
+                    original: serde_json::json!(tag),
+                    removed: Some(true),
+                    ir_field: None,
+                    inferred: Some(false),
+                    confidence: Some("high".to_owned()),
+                    reason: Some(
+                        ("正文重建排除可执行或外部嵌入内容；原节点保留在快照中").to_owned(),
+                    ),
+                    source_nodes: vec![id.as_str().unwrap_or_default().to_owned()],
+                    ..Default::default()
+                },
+            ));
         }
         if !tag.is_empty()
             && !mapped_element(tag)
             && !["script", "style", "iframe", "object", "embed"].contains(&tag)
         {
-            ir.warnings.push(json!({"kind":"unsupported-structure","original":{"tag":tag,"attrs":node["attrs"]},"value":"partial","removed":true,"ir_field":"original_nodes","inferred":false,"confidence":"high","reason":"重建已支持的子内容；标签完整结构记录在 original_nodes，容器语义映射待实现","source_nodes":[id]}));
+            ir.warnings.push(Diagnostic::new(
+                WarningKind::UnsupportedStructure,
+                Details {
+                    original: serde_json::json!({"tag":tag,"attrs":node["attrs"]}),
+                    value: serde_json::json!("partial"),
+                    removed: Some(true),
+                    ir_field: Some("original_nodes".to_owned()),
+                    inferred: Some(false),
+                    confidence: Some("high".to_owned()),
+                    reason: Some("保留已支持的文字和图片".to_owned()),
+                    source_nodes: vec![id.as_str().unwrap_or_default().to_owned()],
+                    ..Default::default()
+                },
+            ));
         }
         if let Some(attrs) = node["attrs"].as_object() {
             if ["ol", "ul"].contains(&tag) {
@@ -105,7 +189,20 @@ pub fn append_diagnostics(ir: &mut Ir) {
                         .split_whitespace()
                         .filter(|class| class.starts_with("custom_"))
                     {
-                        ir.warnings.push(json!({"kind":"custom-list-marker","original":marker,"value":"unknown","removed":true,"ir_field":"blocks.list.custom_style","inferred":false,"confidence":"unknown","reason":"自定义列表类型和类名已写入 IR；导出基础列表，外部 GIF 标记外观记为 unknown","source_nodes":[id]}));
+                        ir.warnings.push(Diagnostic::new(
+                            WarningKind::CustomListMarker,
+                            Details {
+                                original: serde_json::json!(marker),
+                                value: serde_json::json!("unknown"),
+                                removed: Some(true),
+                                ir_field: Some("blocks.list.custom_style".to_owned()),
+                                inferred: Some(false),
+                                confidence: Some("unknown".to_owned()),
+                                reason: Some("自定义编号转为基础列表".to_owned()),
+                                source_nodes: vec![id.as_str().unwrap_or_default().to_owned()],
+                                ..Default::default()
+                            },
+                        ));
                     }
                 }
                 let unsupported =
@@ -134,18 +231,68 @@ pub fn append_diagnostics(ir: &mut Ir) {
                             })
                         });
                 if unsupported {
-                    ir.warnings.push(json!({"kind":"export-limitation","format":"typst","original":attrs,"confidence":"high","reason":"自定义列表标记已写入 IR 和 HTML；Typst 映射待实现","source_nodes":[id]}));
+                    ir.warnings.push(Diagnostic::new(
+                        WarningKind::ExportLimitation,
+                        Details {
+                            format: Some("typst".to_owned()),
+                            original: serde_json::json!(attrs),
+                            confidence: Some("high".to_owned()),
+                            reason: Some(
+                                ("自定义列表标记已写入 IR 和 HTML；Typst 映射待实现").to_owned(),
+                            ),
+                            source_nodes: vec![id.as_str().unwrap_or_default().to_owned()],
+                            ..Default::default()
+                        },
+                    ));
                 }
             }
             for (name, value) in attrs {
                 if crate::rules::is_word_or_webplus_attribute(name) {
-                    ir.warnings.push(json!({"kind":"ue-or-word-attribute","attribute":name,"original":value,"removed":true,"ir_field":if matches!(name.as_str(), "sudyfile-attr" | "isupload") && tag == "a" {"attachments.attributes"} else {"original_nodes.attrs"},"inferred":false,"confidence":"high","reason":"扩展属性保存在来源记录中，重建 HTML 排除此属性；附件链接保留","source_nodes":[id]}));
+                    ir.warnings.push(Diagnostic::new(
+                        NoteKind::UeOrWordAttribute,
+                        Details {
+                            attribute: Some((name).to_owned()),
+                            original: serde_json::json!(value),
+                            removed: Some(true),
+                            ir_field: Some(
+                                (if matches!(name.as_str(), "sudyfile-attr" | "isupload")
+                                    && tag == "a"
+                                {
+                                    "attachments.attributes"
+                                } else {
+                                    "original_nodes.attrs"
+                                })
+                                .to_owned(),
+                            ),
+                            inferred: Some(false),
+                            confidence: Some("high".to_owned()),
+                            reason: Some(
+                                ("扩展属性保存在来源记录中，重建 HTML 排除此属性；附件链接保留")
+                                    .to_owned(),
+                            ),
+                            source_nodes: vec![id.as_str().unwrap_or_default().to_owned()],
+                            ..Default::default()
+                        },
+                    ));
                 }
                 let raw = value.as_str().unwrap_or("");
                 let unsafe_url = ["href", "src"].contains(&name.as_str())
                     && !crate::safety::safe_url(raw, name == "src");
                 if name.starts_with("on") || unsafe_url {
-                    ir.warnings.push(json!({"kind":"unsafe-attribute","attribute":name,"original":value,"removed":true,"ir_field":null,"inferred":false,"confidence":"high","reason":"重建输出过滤事件属性和不安全 URL","source_nodes":[id]}));
+                    ir.warnings.push(Diagnostic::new(
+                        WarningKind::UnsafeAttribute,
+                        Details {
+                            attribute: Some((name).to_owned()),
+                            original: serde_json::json!(value),
+                            removed: Some(true),
+                            ir_field: None,
+                            inferred: Some(false),
+                            confidence: Some("high".to_owned()),
+                            reason: Some("重建输出过滤事件属性和不安全 URL".to_owned()),
+                            source_nodes: vec![id.as_str().unwrap_or_default().to_owned()],
+                            ..Default::default()
+                        },
+                    ));
                 }
                 if name == "style" {
                     for declaration in crate::css::declarations(raw)
@@ -154,60 +301,214 @@ pub fn append_diagnostics(ir: &mut Ir) {
                     {
                         let normalized = crate::css::without_comments(declaration);
                         if normalized != declaration {
-                            ir.warnings.push(json!({"kind":"css-comment-normalization","original":declaration,"value":normalized,"removed":true,"ir_field":"original_nodes.attrs.style","inferred":false,"confidence":"high","reason":"解析声明时忽略字符串外的 CSS 注释，完整原声明保留在节点快照中","source_nodes":[id]}));
+                            ir.warnings.push(Diagnostic::new(
+                                NoteKind::CssCommentNormalization,
+                                Details {
+                                    original: serde_json::json!(declaration),
+                                    value: serde_json::json!(normalized),
+                                    removed: Some(true),
+                                    ir_field: Some("original_nodes.attrs.style".to_owned()),
+                                    inferred: Some(false),
+                                    confidence: Some("high".to_owned()),
+                                    reason: Some("读取样式时跳过注释".to_owned()),
+                                    source_nodes: vec![id.as_str().unwrap_or_default().to_owned()],
+                                    ..Default::default()
+                                },
+                            ));
                         }
                         if normalized.trim().is_empty() {
                             continue;
                         }
                         let Some((property, raw_value)) = normalized.split_once(':') else {
-                            ir.warnings.push(json!({"kind":"malformed-style","original":declaration,"removed":true,"ir_field":null,"inferred":false,"confidence":"high","reason":"CSS 声明缺少冒号，已跳过；原值见 original_nodes","source_nodes":[id]}));
+                            ir.warnings.push(Diagnostic::new(
+                                WarningKind::MalformedStyle,
+                                Details {
+                                    original: serde_json::json!(declaration),
+                                    removed: Some(true),
+                                    ir_field: None,
+                                    inferred: Some(false),
+                                    confidence: Some("high".to_owned()),
+                                    reason: Some(
+                                        ("CSS 声明缺少冒号，已跳过；原值见 original_nodes")
+                                            .to_owned(),
+                                    ),
+                                    source_nodes: vec![id.as_str().unwrap_or_default().to_owned()],
+                                    ..Default::default()
+                                },
+                            ));
                             continue;
                         };
                         let (value, important) = crate::css::value_priority(raw_value);
                         if important {
-                            ir.warnings.push(json!({"kind":"css-priority","original":declaration,"value":value,"removed":true,"ir_field":"blocks / runs","inferred":false,"confidence":"high","reason":"按内联声明优先级选择有效值；编辑模型保存选择后的值，原始优先级标记保留在快照中","source_nodes":[id]}));
+                            ir.warnings.push(Diagnostic::new(
+                                NoteKind::CssPriority,
+                                Details {
+                                    original: serde_json::json!(declaration),
+                                    value: serde_json::json!(value),
+                                    removed: Some(true),
+                                    ir_field: Some("blocks / runs".to_owned()),
+                                    inferred: Some(false),
+                                    confidence: Some("high".to_owned()),
+                                    reason: Some("按 !important 和声明顺序选择样式".to_owned()),
+                                    source_nodes: vec![id.as_str().unwrap_or_default().to_owned()],
+                                    ..Default::default()
+                                },
+                            ));
                         }
                         let property = property.trim().to_ascii_lowercase();
                         if tag == "img" && matches!(property.as_str(), "width" | "height") {
-                            ir.warnings.push(json!({"kind":"image-dimension","original":declaration,"value":value,"removed":!crate::safety::safe_css(value),"ir_field":"runs.image_attributes","inferred":false,"confidence":"high","reason":"图片 CSS 尺寸优先于 HTML 尺寸属性；保留原单位，导出时转换支持的长度","source_nodes":[id]}));
+                            ir.warnings.push(Diagnostic::new(
+                                NoteKind::ImageDimension,
+                                Details {
+                                    original: serde_json::json!(declaration),
+                                    value: serde_json::json!(value),
+                                    removed: Some(!crate::safety::safe_css(value)),
+                                    ir_field: Some("runs.image_attributes".to_owned()),
+                                    inferred: Some(false),
+                                    confidence: Some("high".to_owned()),
+                                    reason: Some("优先采用样式中的图片宽高".to_owned()),
+                                    source_nodes: vec![id.as_str().unwrap_or_default().to_owned()],
+                                    ..Default::default()
+                                },
+                            ));
                             continue;
                         }
                         if tag == "table"
                             && crate::style_registry::TABLE_STYLES.contains(&property.as_str())
                         {
-                            ir.warnings.push(json!({"kind":"table-style","original":declaration,"value":value,"removed":!crate::safety::safe_css(value),"ir_field":"blocks.table_styles","inferred":false,"confidence":"high","reason":"表格声明写入 blocks.table_styles；HTML 过滤无效值，Typst 按已支持的属性导出","source_nodes":[id]}));
+                            ir.warnings.push(Diagnostic::new(
+                                NoteKind::TableStyle,
+                                Details {
+                                    original: serde_json::json!(declaration),
+                                    value: serde_json::json!(value),
+                                    removed: Some(!crate::safety::safe_css(value)),
+                                    ir_field: Some("blocks.table_styles".to_owned()),
+                                    inferred: Some(false),
+                                    confidence: Some("high".to_owned()),
+                                    reason: Some("保留已识别的表格样式".to_owned()),
+                                    source_nodes: vec![id.as_str().unwrap_or_default().to_owned()],
+                                    ..Default::default()
+                                },
+                            ));
                             continue;
                         }
                         if matches!(tag, "col" | "colgroup") && property == "width" {
-                            ir.warnings.push(json!({"kind":"column-width","original":declaration,"value":value,"removed":!crate::safety::safe_css(value),"ir_field":"blocks.column_groups","inferred":false,"confidence":"high","reason":"列宽声明保留在 IR 和安全 HTML 中；Typst 映射固定长度和 0–100% 百分比，复杂表达式保留原始声明","source_nodes":[id]}));
+                            ir.warnings.push(Diagnostic::new(
+                                NoteKind::ColumnWidth,
+                                Details {
+                                    original: serde_json::json!(declaration),
+                                    value: serde_json::json!(value),
+                                    removed: Some(!crate::safety::safe_css(value)),
+                                    ir_field: Some("blocks.column_groups".to_owned()),
+                                    inferred: Some(false),
+                                    confidence: Some("high".to_owned()),
+                                    reason: Some("提取列宽，按输出格式换算".to_owned()),
+                                    source_nodes: vec![id.as_str().unwrap_or_default().to_owned()],
+                                    ..Default::default()
+                                },
+                            ));
                             continue;
                         }
                         if !crate::safety::safe_css(value.trim()) {
                             let sentinel = crate::safety::corrupted_style(value);
-                            ir.warnings.push(json!({"kind":if sentinel {"undefinedundefined-style"} else {"unsafe-style"},"attribute":property,"original":value.trim(),"removed":true,"ir_field":"original_nodes.attrs.style","inferred":false,"confidence":"high","reason":"重建 HTML 过滤此声明值；原始属性仍保存在节点快照中","source_nodes":[id]}));
+                            ir.warnings.push(Diagnostic::new(
+                                if sentinel {
+                                    DiagnosticKind::from(NoteKind::UndefinedundefinedStyle)
+                                } else {
+                                    DiagnosticKind::from(WarningKind::UnsafeStyle)
+                                },
+                                Details {
+                                    attribute: Some((property).to_owned()),
+                                    original: serde_json::json!(value.trim()),
+                                    removed: Some(true),
+                                    ir_field: Some("original_nodes.attrs.style".to_owned()),
+                                    inferred: Some(false),
+                                    confidence: Some("high".to_owned()),
+                                    reason: Some(
+                                        ("重建 HTML 过滤此声明值；原始属性仍保存在节点快照中")
+                                            .to_owned(),
+                                    ),
+                                    source_nodes: vec![id.as_str().unwrap_or_default().to_owned()],
+                                    ..Default::default()
+                                },
+                            ));
                             continue;
                         }
                         if ["p", "div", "h1", "h2", "h3", "h4", "h5", "h6"].contains(&tag)
                             && property == "margin"
                         {
-                            ir.warnings.push(json!({"kind":"paragraph-margin-shorthand","original":declaration,"removed":true,"ir_field":"blocks.spacing","inferred":false,"confidence":"high","reason":"展开 margin 简写，段前、段后间距写入 blocks.spacing；左右外边距记录在原始节点中","source_nodes":[id]}));
+                            ir.warnings.push(Diagnostic::new(
+                                NoteKind::ParagraphMarginShorthand,
+                                Details {
+                                    original: serde_json::json!(declaration),
+                                    removed: Some(true),
+                                    ir_field: Some("blocks.spacing".to_owned()),
+                                    inferred: Some(false),
+                                    confidence: Some("high".to_owned()),
+                                    reason: Some("将 margin 拆成各方向间距".to_owned()),
+                                    source_nodes: vec![id.as_str().unwrap_or_default().to_owned()],
+                                    ..Default::default()
+                                },
+                            ));
                             continue;
                         }
                         if ["p", "div", "h1", "h2", "h3", "h4", "h5", "h6"].contains(&tag)
                             && ["margin-top", "margin-bottom"].contains(&property.as_str())
                         {
-                            ir.warnings.push(json!({"kind":"paragraph-spacing","original":value.trim(),"attribute":property,"removed":!crate::safety::safe_css(value.trim()),"ir_field":"blocks.spacing","inferred":false,"confidence":"high","reason":"将 HTML 段落间距声明写入 blocks.spacing","source_nodes":[id]}));
+                            ir.warnings.push(Diagnostic::new(
+                                NoteKind::ParagraphSpacing,
+                                Details {
+                                    original: serde_json::json!(value.trim()),
+                                    attribute: Some((property).to_owned()),
+                                    removed: Some(!crate::safety::safe_css(value.trim())),
+                                    ir_field: Some("blocks.spacing".to_owned()),
+                                    inferred: Some(false),
+                                    confidence: Some("high".to_owned()),
+                                    reason: Some(
+                                        ("将 HTML 段落间距声明写入 blocks.spacing").to_owned(),
+                                    ),
+                                    source_nodes: vec![id.as_str().unwrap_or_default().to_owned()],
+                                    ..Default::default()
+                                },
+                            ));
                             continue;
                         }
                         if ["td", "th"].contains(&tag)
                             && crate::style_registry::CELL_STYLES.contains(&property.as_str())
                         {
                             let safe = crate::safety::safe_css(value.trim());
-                            ir.warnings.push(json!({"kind":"cell-style","attribute":property,"original":value.trim(),"removed":!safe,"ir_field":"rows.styles","inferred":false,"confidence":"high","reason":"单元格声明写入 rows.styles；HTML 过滤无效值，Typst 按已支持的属性导出","source_nodes":[id]}));
+                            ir.warnings.push(Diagnostic::new(
+                                NoteKind::CellStyle,
+                                Details {
+                                    attribute: Some((property).to_owned()),
+                                    original: serde_json::json!(value.trim()),
+                                    removed: Some(!safe),
+                                    ir_field: Some("rows.styles".to_owned()),
+                                    inferred: Some(false),
+                                    confidence: Some("high".to_owned()),
+                                    reason: Some("保留已识别的单元格样式".to_owned()),
+                                    source_nodes: vec![id.as_str().unwrap_or_default().to_owned()],
+                                    ..Default::default()
+                                },
+                            ));
                             continue;
                         }
                         if let Some((target, mapped)) = crate::word::declaration(&property, value) {
-                            ir.warnings.push(json!({"kind":"word-style-mapping","attribute":property,"original":value.trim(),"value":mapped,"removed":true,"ir_field":target,"inferred":false,"confidence":"high","reason":"依据 UEditor filterword.js 的声明映射；现存标准 CSS 声明优先","source_nodes":[id]}));
+                            ir.warnings.push(Diagnostic::new(
+                                NoteKind::WordStyleMapping,
+                                Details {
+                                    attribute: Some((property).to_owned()),
+                                    original: serde_json::json!(value.trim()),
+                                    value: serde_json::json!(mapped),
+                                    removed: Some(true),
+                                    ir_field: Some((target).to_owned()),
+                                    inferred: Some(false),
+                                    confidence: Some("high".to_owned()),
+                                    reason: Some("将 Word 样式转换为标准声明".to_owned()),
+                                    source_nodes: vec![id.as_str().unwrap_or_default().to_owned()],
+                                    ..Default::default()
+                                },
+                            ));
                             continue;
                         }
                         if let Some(mapping) = crate::style_registry::common(&property) {
@@ -215,7 +516,23 @@ pub fn append_diagnostics(ir: &mut Ir) {
                                 .entry("style_mappings")
                                 .or_insert_with(|| json!({}))[&property] = json!(mapping.ir_field);
                         } else {
-                            ir.warnings.push(json!({"kind":"unmapped-style","attribute":property,"original":value.trim(),"removed":true,"ir_field":null,"inferred":false,"confidence":"high","reason":"该声明写入 original_nodes.attrs.style，IR 格式映射待实现","source_nodes":[id]}));
+                            ir.warnings.push(Diagnostic::new(
+                                WarningKind::UnmappedStyle,
+                                Details {
+                                    attribute: Some((property).to_owned()),
+                                    original: serde_json::json!(value.trim()),
+                                    removed: Some(true),
+                                    ir_field: None,
+                                    inferred: Some(false),
+                                    confidence: Some("high".to_owned()),
+                                    reason: Some(
+                                        "该声明写入 original_nodes.attrs.style，IR 格式映射待实现"
+                                            .to_owned(),
+                                    ),
+                                    source_nodes: vec![id.as_str().unwrap_or_default().to_owned()],
+                                    ..Default::default()
+                                },
+                            ));
                         }
                     }
                 }
@@ -228,7 +545,8 @@ pub fn append_diagnostics(ir: &mut Ir) {
 mod tests {
     #[test]
     fn semantic_downgrades_have_source_evidence() {
-        let document = scraper::Html::parse_document("<div class='Article_Content'><custom-box><p>正文</p></custom-box><dl><dt>术语</dt><dd>说明</dd></dl><table><tbody><tr><td>单元格</td></tr></tbody></table></div>");
+        let document = scraper::Html::parse_document("<div class='Article_Content'><custom-box><p>正文</p></custom-box><dl><dt>术语</dt><dd>说明</dd></dl>\
+            <table><tbody><tr><td>单元格</td></tr></tbody></table></div>");
         let ir = crate::parser::parse(&document, ".Article_Content", false, None).unwrap();
         for tag in ["custom-box", "dl", "dt", "dd"] {
             let warning = ir
@@ -271,7 +589,10 @@ mod tests {
     }
     #[test]
     fn supported_style_values_do_not_disappear_without_diagnostics() {
-        let document = scraper::Html::parse_document("<div class='Article_Content'><p><span style='font-family:undefinedundefinedmicrosoft yaheiundefinedundefined;background-color:url(bad);invalid'>正文</span></p></div>");
+        let document = scraper::Html::parse_document(
+            "<div class='Article_Content'><p><span style='font-family:undefinedundefinedmicrosoft \
+                yaheiundefinedundefined;background-color:url(bad);invalid'>正文</span></p></div>",
+        );
         let ir = crate::parser::parse(&document, ".Article_Content", false, None).unwrap();
         for kind in [
             "undefinedundefined-style",
@@ -290,10 +611,10 @@ mod tests {
     }
     #[test]
     fn reports_unknowns_and_nested_unsupported_content() {
-        let html = scraper::Html::parse_document("<div class='Article_Content'><p>&nbsp;&nbsp;内容<span style='mso-x:1;letter-spacing:2px' onclick='bad()'>文字</span><a href='javascript:x'>链接</a></p><video src='v.mp4'></video></div>");
+        let html = scraper::Html::parse_document("<div class='Article_Content'><p>&nbsp;&nbsp;内容<span style='mso-x:1;letter-spacing:2px' \
+            onclick='bad()'>文字</span><a href='javascript:x'>链接</a></p><video src='v.mp4'></video></div>");
         let ir = crate::parser::parse(&html, ".Article_Content", false, None).unwrap();
         for kind in [
-            "unrecoverable",
             "whitespace",
             "unmapped-style",
             "unsafe-attribute",

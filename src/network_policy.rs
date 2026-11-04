@@ -1,4 +1,4 @@
-//! Public-network routing with checked DNS results and per-hop redirect policy.
+//! 校验 DNS 返回地址及每次重定向的目标。
 use reqwest::{
     blocking::Client,
     dns::{Addrs, Name, Resolve, Resolving},
@@ -11,11 +11,18 @@ use std::{
 };
 use url::{Host, Url};
 
-fn policy_error() -> io::Error {
-    io::Error::new(
-        io::ErrorKind::PermissionDenied,
-        "network-policy: 目标地址属于私网或保留网段；访问此网络请设置 --allow-private-network",
-    )
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum RoutingError {
+    #[error("目标地址属于私网或保留网段；访问此网络请设置 --allow-private-network")]
+    Restricted,
+    #[error("请求需要 HTTP/HTTPS 地址和独立于 URL 的身份信息")]
+    InvalidAddress,
+    #[error("域名解析失败：{0}")]
+    Dns(#[source] io::Error),
+}
+
+fn policy_error() -> RoutingError {
+    RoutingError::Restricted
 }
 
 pub fn public_ip(ip: IpAddr) -> bool {
@@ -47,15 +54,12 @@ pub fn public_ip(ip: IpAddr) -> bool {
     }
 }
 
-pub fn check_url(url: &Url, allow_private: bool) -> io::Result<()> {
+pub fn check_url(url: &Url, allow_private: bool) -> Result<(), RoutingError> {
     if !matches!(url.scheme(), "http" | "https")
         || !url.username().is_empty()
         || url.password().is_some()
     {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "network-policy: 请求需要 HTTP/HTTPS 地址和独立于 URL 的身份信息",
-        ));
+        return Err(RoutingError::InvalidAddress);
     }
     if allow_private {
         return Ok(());
@@ -73,17 +77,28 @@ pub fn check_url(url: &Url, allow_private: bool) -> io::Result<()> {
     }
 }
 
-struct CheckedResolver;
+struct CheckedResolver {
+    allow_private: bool,
+}
 impl Resolve for CheckedResolver {
     fn resolve(&self, name: Name) -> Resolving {
+        let allow_private = self.allow_private;
         Box::pin(async move {
             let addresses: Vec<SocketAddr> = tokio::task::spawn_blocking(move || {
                 (name.as_str(), 0)
                     .to_socket_addrs()
                     .map(|iter| iter.collect::<Vec<_>>())
             })
-            .await??;
-            if addresses.is_empty() || addresses.iter().any(|address| !public_ip(address.ip())) {
+            .await?
+            .map_err(RoutingError::Dns)?;
+            if addresses.is_empty() {
+                return Err(RoutingError::Dns(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "域名未返回地址",
+                ))
+                .into());
+            }
+            if !allow_private && addresses.iter().any(|address| !public_ip(address.ip())) {
                 return Err(policy_error().into());
             }
             Ok(Box::new(addresses.into_iter()) as Addrs)
@@ -92,14 +107,12 @@ impl Resolve for CheckedResolver {
 }
 
 pub fn client(timeout: Duration, allow_private: bool) -> Result<Client, reqwest::Error> {
-    let mut builder = Client::builder()
+    let builder = Client::builder()
         .no_proxy()
         .timeout(timeout)
         .user_agent(concat!("ue-weave/", env!("CARGO_PKG_VERSION")))
-        .redirect(redirect_policy(allow_private));
-    if !allow_private {
-        builder = builder.dns_resolver(Arc::new(CheckedResolver));
-    }
+        .redirect(redirect_policy(allow_private))
+        .dns_resolver(Arc::new(CheckedResolver { allow_private }));
     builder.build()
 }
 
@@ -148,7 +161,10 @@ mod tests {
             Some(1024),
             &crate::log::Logger::new(false),
         );
-        assert_eq!(result.err().unwrap().kind, "network_policy");
+        assert_eq!(
+            result.err().unwrap().kind,
+            crate::error::NetworkKind::NetworkPolicy
+        );
         server.join().unwrap();
         assert_eq!(
             target.accept().unwrap_err().kind(),

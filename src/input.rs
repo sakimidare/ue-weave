@@ -1,12 +1,12 @@
+use crate::diagnostic::{Details, Diagnostic, WarningKind};
 use encoding_rs::{Encoding, UTF_8};
 use scraper::{Html, Selector};
-use serde_json::{json, Value};
 
 pub struct Input {
     pub bytes: Vec<u8>,
     pub html: String,
     pub source: String,
-    pub warnings: Vec<Value>,
+    pub warnings: Vec<Diagnostic>,
 }
 
 pub fn charset(content_type: &str) -> Option<String> {
@@ -49,12 +49,31 @@ impl Input {
             .as_deref()
             .is_some_and(|label| Encoding::for_label(label.as_bytes()).is_none())
         {
-            warnings.push(json!({"kind":"unknown-encoding","original":label,"value":encoding.name(),"confidence":"low","reason":"编码声明未匹配已支持的编码，使用 BOM 指定的编码或 UTF-8","source_nodes":[]}));
+            warnings.push(Diagnostic::new(
+                WarningKind::UnknownEncoding,
+                Details {
+                    original: serde_json::json!(label),
+                    value: serde_json::json!(encoding.name()),
+                    confidence: Some("low".to_owned()),
+                    reason: Some(
+                        ("编码声明未匹配已支持的编码，使用 BOM 指定的编码或 UTF-8").to_owned(),
+                    ),
+                    ..Default::default()
+                },
+            ));
         }
         let (text, _, replaced) = encoding.decode(&bytes);
         let html = text.into_owned();
         if replaced {
-            warnings.push(json!({"kind":"decode-replacement","value":encoding.name(),"confidence":"high","reason":"部分输入字节无法按检测到的编码解码，已使用替换字符","source_nodes":[]}));
+            warnings.push(Diagnostic::new(
+                WarningKind::DecodeReplacement,
+                Details {
+                    value: serde_json::json!(encoding.name()),
+                    confidence: Some("high".to_owned()),
+                    reason: Some("部分输入字节无法按检测到的编码解码，已使用替换字符".to_owned()),
+                    ..Default::default()
+                },
+            ));
         }
         Self {
             bytes,

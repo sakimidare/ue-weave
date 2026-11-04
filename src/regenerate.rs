@@ -1,9 +1,8 @@
-//! Re-render an editable IR bundle without fetching or executing remote content.
+//! 读取已编辑的文章 JSON 和本地资源，重新生成文档。
 use crate::{
     error::{RecoverError, Result},
     model::Ir,
 };
-use sha2::{Digest, Sha256};
 use std::{
     fs,
     path::{Component, Path},
@@ -23,15 +22,14 @@ fn write(path: &Path, bytes: &[u8]) -> Result<()> {
     })
 }
 
-pub fn run(path: &Path, args: &crate::Args) -> Result<()> {
-    let output = &args.output;
+pub fn run(path: &Path, args: &crate::cli::Args, output: &Path) -> Result<()> {
     let json = args.json;
     let verbose = args.verbose;
     let profile = args.profile;
     let settings = args.output_options.resolve(profile);
     let asset_root = args.asset_root.as_deref();
     let exports = &args.exports;
-    let logger = crate::log::Logger::new(verbose);
+    let logger = crate::log::Logger::with_color(verbose, args.color);
     logger.stage("input-ir", format!("读取 {}", path.display()));
     let mut ir: Ir = crate::ir_format::read(&read(path)?, path)?;
     let directory = path.parent().unwrap_or(Path::new("."));
@@ -77,14 +75,6 @@ pub fn run(path: &Path, args: &crate::Args) -> Result<()> {
         }
         let relative = relative.to_string_lossy().into_owned();
         let bytes = read(&canonical)?;
-        if let Some(expected) = asset["download"]["sha256"].as_str() {
-            if format!("{:x}", Sha256::digest(&bytes)) != expected {
-                return Err(RecoverError::InvalidIr {
-                    field: format!("assets.{relative}.download.sha256"),
-                    reason: "资源内容与记录的 SHA-256 不一致；请核对文件和资源记录".into(),
-                });
-            }
-        }
         files.push((relative.clone(), bytes));
         asset["local_path"] = relative.into();
     }
@@ -104,7 +94,7 @@ pub fn run(path: &Path, args: &crate::Args) -> Result<()> {
         })?;
         write(&target, &bytes)?;
     }
-    logger.warnings(&ir.warnings);
+    logger.warnings(&ir.warnings, &ir.original_nodes, &rendered.ir);
     logger.done(
         ir.blocks.iter().map(crate::model::Block::block_count).sum(),
         ir.attachments.len(),
@@ -113,8 +103,16 @@ pub fn run(path: &Path, args: &crate::Args) -> Result<()> {
     if json {
         println!(
             "{}",
-            serde_json::json!({"status":"ok", "source":ir.source, "warnings":ir.warnings, "output_profile":profile,"output_options":settings,"counts":{"blocks":ir.blocks.len(),"attachments":ir.attachments.len(),"images":ir.images.len()}})
+            serde_json::json!({
+                "status": "ok",
+                "source": ir.source,
+                "warnings": ir.warnings,
+                "output_profile": profile,
+                "output_options": settings,
+                "counts": {"blocks":ir.blocks.len(),"attachments":ir.attachments.len(),"images":ir.images.len()},
+            })
         );
     }
+    logger.finish_diagnostics(&ir.warnings);
     Ok(())
 }

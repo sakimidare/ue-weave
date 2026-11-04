@@ -3,9 +3,14 @@ name = "ue-weave"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.98.1"
-exclude = ["vendor/", "output/", "acceptance-output/", "profile-examples/"]
+exclude = ["vendor/", "output/", "acceptance-output/", "profile-examples/", "report.md"]
 
 [dependencies]
+anstream = "1"
+anstyle = "1"
+annotate-snippets = "0.12.17"
+comfy-table = { version = "8", features = ["custom_styling"] }
+terminal_size = "0.4"
 encoding_rs = "0.8"
 clap = { version = "4", features = ["derive"] }
 html-escape = "0.2"
@@ -20,3 +25,17 @@ tokio = { version = "1", features = ["rt"] }
 sha2 = "0.10"
 cssparser = "0.34"
 percent-encoding = "2"
+
+[dev-dependencies]
+console = "0.16"
+tempfile = "3"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "deny"
+
+[profile.release]
+lto = "thin"
+strip = true

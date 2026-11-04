@@ -1,4 +1,5 @@
-//! Check visible text order independently of structural reconstruction.
+//! 单独校验可见文字内容及顺序。
+use crate::diagnostic::{Details, Diagnostic, WarningKind};
 use scraper::{ElementRef, Html, Node};
 
 fn visible_text(root: ElementRef) -> String {
@@ -38,7 +39,14 @@ pub fn check(root: ElementRef, ir: &mut crate::model::Ir) {
     let output = Html::parse_fragment(&crate::renderer::render(ir));
     let reconstructed = visible_text(output.root_element());
     let matches = original == reconstructed;
-    let evidence = serde_json::json!({"value":if matches {"matched"} else {"mismatch"},"confidence":"high","reason":"对比正文文字、PDF 占位元素的附件标题与重建 HTML 的非空白文字顺序；跳过可执行节点及已知异常字符串，空白和结构另行记录","source_nodes":["n0"],"original_characters":original.chars().count(),"reconstructed_characters":reconstructed.chars().count()});
+    let evidence = serde_json::json!({
+        "value": if matches {"matched"} else {"mismatch"},
+        "confidence": "high",
+        "reason": "对比正文文字、PDF 占位元素的附件标题与重建 HTML 的非空白文字顺序；跳过可执行节点及已知异常字符串，空白和结构另行记录",
+        "source_nodes": ["n0"],
+        "original_characters": original.chars().count(),
+        "reconstructed_characters": reconstructed.chars().count(),
+    });
     ir.metadata
         .insert("content_integrity".into(), evidence.clone());
     if !matches {
@@ -47,7 +55,33 @@ pub fn check(root: ElementRef, ir: &mut crate::model::Ir) {
             .zip(reconstructed.chars())
             .take_while(|(a, b)| a == b)
             .count();
-        ir.warnings.push(serde_json::json!({"kind":"content-integrity-mismatch","value":evidence,"confidence":"high","reason":"正文文字或顺序存在差异；first_difference 标记首个差异位置，excerpt 字段提供对照片段","source_nodes":["n0"],"first_difference":offset,"original_excerpt":original.chars().skip(offset.saturating_sub(20)).take(80).collect::<String>(),"reconstructed_excerpt":reconstructed.chars().skip(offset.saturating_sub(20)).take(80).collect::<String>()}));
+        ir.warnings.push(Diagnostic::new(
+            WarningKind::ContentIntegrityMismatch,
+            Details {
+                value: serde_json::json!(evidence),
+                confidence: Some("high".to_owned()),
+                reason: Some("正文文字或顺序存在差异".to_owned()),
+                source_nodes: vec![("n0").to_string()],
+                first_difference: Some(offset),
+                original_excerpt: Some(
+                    (original
+                        .chars()
+                        .skip(offset.saturating_sub(20))
+                        .take(80)
+                        .collect::<String>())
+                    .to_owned(),
+                ),
+                reconstructed_excerpt: Some(
+                    (reconstructed
+                        .chars()
+                        .skip(offset.saturating_sub(20))
+                        .take(80)
+                        .collect::<String>())
+                    .to_owned(),
+                ),
+                ..Default::default()
+            },
+        ));
     }
     let base = ir
         .metadata
@@ -57,9 +91,26 @@ pub fn check(root: ElementRef, ir: &mut crate::model::Ir) {
     let expected = resources(root, &base);
     let actual = resources(output.root_element(), &base);
     let resources_match = expected == actual;
-    ir.metadata.insert("resource_integrity".into(), serde_json::json!({"value":if resources_match {"matched"} else {"mismatch"},"expected":expected,"actual":actual,"reason":"独立统计正文图片、超链接和 PDF 阅读器地址，比较 URL 与出现次数"}));
+    ir.metadata.insert(
+        "resource_integrity".into(),
+        serde_json::json!({
+            "value": if resources_match {"matched"} else {"mismatch"},
+            "expected": expected,
+            "actual": actual,
+            "reason": "独立统计正文图片、超链接和 PDF 阅读器地址，比较 URL 与出现次数",
+        }),
+    );
     if !resources_match {
-        ir.warnings.push(serde_json::json!({"kind":"resource-integrity-mismatch","source_nodes":["n0"],"expected":expected,"actual":actual,"reason":"资源地址或数量发生变化，详见 expected 与 actual"}));
+        ir.warnings.push(Diagnostic::new(
+            WarningKind::ResourceIntegrityMismatch,
+            Details {
+                source_nodes: vec![("n0").to_string()],
+                expected: serde_json::json!(expected),
+                actual: serde_json::json!(actual),
+                reason: Some("资源地址或数量发生变化，详见 expected 与 actual".to_owned()),
+                ..Default::default()
+            },
+        ));
     }
 }
 

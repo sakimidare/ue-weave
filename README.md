@@ -97,6 +97,7 @@ typst compile output/reconstructed.typ output/result.pdf
 ## 更多选项
 
 - `--verbose`：查看详细处理过程。
+- `--explain N0002`：查看编号含义、具体例子和处理方法，可单独运行。
 - `--timeout 45`：将每次请求的超时设为 45 秒，默认 30 秒。
 - `--retries 3`：临时网络故障重试 3 次，默认 2 次。
 - `--allow-private-network`：访问内网网站时使用。

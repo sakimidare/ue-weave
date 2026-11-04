@@ -21,7 +21,7 @@ fn private_network_requires_explicit_option() {
         .unwrap();
     assert!(!result.status.success());
     let error: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
-    assert_eq!(error["code"], "network_policy");
+    assert_eq!(error["code"], "E0109");
     assert_eq!(
         listener.accept().unwrap_err().kind(),
         std::io::ErrorKind::WouldBlock
@@ -64,7 +64,8 @@ fn serve(responses: Vec<(u16, String)>) -> (String, thread::JoinHandle<usize>) {
 
 #[test]
 fn page_and_attachment_retry_and_local_config_use_same_pipeline() {
-    let page = "<h1>本地站点标题</h1><section class='body'><p><span class='wp_pdf_player' pdfsrc='/file.pdf' sudyfile-attr=\"{'title':'通知.pdf'}\"></span></p></section>";
+    let page = "<h1>本地站点标题</h1><section class='body'><p><span class='wp_pdf_player' pdfsrc='/file.pdf' \
+        sudyfile-attr=\"{'title':'通知.pdf'}\"></span></p></section>";
     let (url, server) = serve(vec![
         (503, "".into()),
         (200, page.into()),
@@ -107,7 +108,7 @@ fn page_and_attachment_retry_and_local_config_use_same_pipeline() {
     assert!(report["attachment_errors"].as_array().unwrap().is_empty());
     assert_eq!(
         String::from_utf8_lossy(&result.stderr)
-            .matches("[retry]")
+            .matches("| retry:")
             .count(),
         2
     );
@@ -154,7 +155,7 @@ fn exhausted_retries_produce_structured_error() {
     assert!(!result.status.success());
     assert_eq!(server.join().unwrap(), 2);
     let error: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
-    assert_eq!(error["code"], "http_status");
+    assert_eq!(error["code"], "E0106");
     assert_eq!(error["network"]["http_status"], 503);
     assert_eq!(error["network"]["attempts"], 2);
     assert_eq!(error["network"]["url"], format!("{url}/"));

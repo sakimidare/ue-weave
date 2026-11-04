@@ -1,3 +1,4 @@
+use crate::diagnostic::{Details, Diagnostic, NoteKind, WarningKind};
 use crate::inline::{image_run, inherited_context, runs, text_run, visit_node, RunContext};
 use crate::{
     model::{Block, Ir, Run},
@@ -16,8 +17,27 @@ fn collect_assets(
         if let Some((href, title)) = crate::attachment::embedded_pdf(element) {
             let absolute = rules::absolute_url(base_url.as_ref(), &href);
             let node = snapshot.element_id(element);
-            ir.attachments.push(serde_json::json!({"href":absolute,"text":title,"confidence":"high","reason":"WebPlus PDF 占位元素的 pdfsrc 属性","source_nodes":[node]}));
-            ir.warnings.push(serde_json::json!({"kind":"embedded-pdf","original":href,"value":absolute,"removed":false,"inferred":false,"confidence":"high","ir_field":"attachments, blocks.runs.link","reason":"PDF 阅读器占位元素转换为附件链接","source_nodes":[node]}));
+            ir.attachments.push(serde_json::json!({
+                "href": absolute,
+                "text": title,
+                "confidence": "high",
+                "reason": "WebPlus PDF 占位元素的 pdfsrc 属性",
+                "source_nodes": [node],
+            }));
+            ir.warnings.push(Diagnostic::new(
+                NoteKind::EmbeddedPdf,
+                Details {
+                    original: serde_json::json!(href),
+                    value: serde_json::json!(absolute),
+                    removed: Some(false),
+                    inferred: Some(false),
+                    confidence: Some("high".to_owned()),
+                    ir_field: Some("attachments, blocks.runs.link".to_owned()),
+                    reason: Some("PDF 阅读器占位元素转换为附件链接".to_owned()),
+                    source_nodes: vec![node.to_string()],
+                    ..Default::default()
+                },
+            ));
         }
     }
     for image in root
@@ -28,19 +48,67 @@ fn collect_assets(
         if image.value().name() == "v:imagedata" {
             for property in ["width", "height"] {
                 if let Some(value) = crate::word::vml_dimension(image, property) {
-                    ir.warnings.push(serde_json::json!({"kind":"vml-dimension","original":image.ancestors().filter_map(ElementRef::wrap).find(|node| node.value().name() == "v:shape").and_then(|shape| rules::style(shape, property)),"value":value,"ir_field":format!("image_attributes.{property}"),"removed":true,"inferred":false,"confidence":"high","reason":"按 UEditor transUnitToPx 的 pt 换算规则转换为像素；px 保持像素含义","source_nodes":[snapshot.element_id(image)]}));
+                    let original = image
+                        .ancestors()
+                        .filter_map(ElementRef::wrap)
+                        .find(|node| node.value().name() == "v:shape")
+                        .and_then(|shape| rules::style(shape, property));
+                    ir.warnings.push(Diagnostic::new(
+                        NoteKind::VmlDimension,
+                        Details {
+                            original: serde_json::json!(original),
+                            value: serde_json::json!(value),
+                            ir_field: Some((format!("image_attributes.{property}")).to_owned()),
+                            removed: Some(true),
+                            inferred: Some(false),
+                            confidence: Some("high".to_owned()),
+                            reason: Some("按 pt 与 px 的比例换算图片尺寸".to_owned()),
+                            source_nodes: vec![(snapshot.element_id(image)).to_string()],
+                            ..Default::default()
+                        },
+                    ));
                 }
             }
-            ir.warnings.push(serde_json::json!({"kind":"vml-image","original":image.html(),"value":image.value().attr("src"),"removed":true,"ir_field":"runs.image","inferred":false,"confidence":"high","reason":"参考 filterword.js 将 VML 图片引用转换为普通图片；形状几何信息仍保存在原始节点中","source_nodes":[snapshot.element_id(image)]}));
+            ir.warnings.push(Diagnostic::new(
+                NoteKind::VmlImage,
+                Details {
+                    original: serde_json::json!(image.html()),
+                    value: serde_json::json!(image.value().attr("src")),
+                    removed: Some(true),
+                    ir_field: Some("runs.image".to_owned()),
+                    inferred: Some(false),
+                    confidence: Some("high".to_owned()),
+                    reason: Some("从 VML 标签提取图片地址".to_owned()),
+                    source_nodes: vec![(snapshot.element_id(image)).to_string()],
+                    ..Default::default()
+                },
+            ));
         }
         if rules::attachment_icon(image) {
-            ir.warnings.push(serde_json::json!({"kind":"attachment-icon","original":image.html(),"action":"removed","removed":true,"ir_field":null,"inferred":false,"confidence":"high","reason":"识别附件装饰图标，输出保留附件链接并排除图标图片","source_nodes":[snapshot.element_id(image)]}));
+            ir.warnings.push(Diagnostic::new(
+                NoteKind::AttachmentIcon,
+                Details {
+                    original: serde_json::json!(image.html()),
+                    action: Some("removed".to_owned()),
+                    removed: Some(true),
+                    ir_field: None,
+                    inferred: Some(false),
+                    confidence: Some("high".to_owned()),
+                    reason: Some("识别附件装饰图标，输出保留附件链接并排除图标图片".to_owned()),
+                    source_nodes: vec![(snapshot.element_id(image)).to_string()],
+                    ..Default::default()
+                },
+            ));
         } else if image
             .value()
             .attr("src")
             .is_some_and(|value| crate::safety::safe_url(value, true))
         {
-            ir.images.push(serde_json::json!({"src":image.value().attr("src").map(|value|rules::absolute_url(base_url.as_ref(),value)),"alt":image.value().attr("alt").unwrap_or(""),"source_nodes":[snapshot.element_id(image)]}));
+            ir.images.push(serde_json::json!({
+                "src": image.value().attr("src").map(|value|rules::absolute_url(base_url.as_ref(),value)),
+                "alt": image.value().attr("alt").unwrap_or(""),
+                "source_nodes": [snapshot.element_id(image)],
+            }));
         }
     }
     for link in root.select(&Selector::parse("a").unwrap()) {
@@ -56,7 +124,20 @@ fn collect_assets(
                 if attachment["attributes"]["sudyfile_raw"].is_string()
                     && attachment["attributes"]["sudyfile_json"].is_null()
                 {
-                    ir.warnings.push(serde_json::json!({"kind":"attachment-metadata-unparsed","original":attachment["attributes"]["sudyfile_raw"],"value":"unknown","confidence":"unknown","reason":"附件属性解析失败，原值见 attachments.attributes.sudyfile_raw","source_nodes":[snapshot.element_id(link)]}));
+                    ir.warnings.push(Diagnostic::new(
+                        WarningKind::AttachmentMetadataUnparsed,
+                        Details {
+                            original: serde_json::json!(attachment["attributes"]["sudyfile_raw"]),
+                            value: serde_json::json!("unknown"),
+                            confidence: Some("unknown".to_owned()),
+                            reason: Some(
+                                ("附件属性解析失败，原值见 attachments.attributes.sudyfile_raw")
+                                    .to_owned(),
+                            ),
+                            source_nodes: vec![(snapshot.element_id(link)).to_string()],
+                            ..Default::default()
+                        },
+                    ));
                 }
                 ir.attachments.push(attachment);
             }
@@ -64,6 +145,8 @@ fn collect_assets(
     }
 }
 
+/// 按选择器提取正文，补全相对链接，并收集来源节点与诊断。
+/// no_inference 为 true 时仅使用显式格式；函数仅处理已加载的 DOM。
 pub fn parse(
     document: &Html,
     selector: &str,
@@ -100,7 +183,18 @@ pub fn parse(
             .or_else(|| Url::parse(href).ok());
         match resolved.filter(|url| matches!(url.scheme(), "http" | "https")) {
             Some(url) => base_url = Some(url),
-            None => ir.warnings.push(serde_json::json!({"kind":"invalid-base-url","original":href,"value":"ignored","confidence":"high","reason":"base href 的 HTTP/HTTPS 地址校验失败，使用页面 URL 作为基址","source_nodes":[]})),
+            None => ir.warnings.push(Diagnostic::new(
+                WarningKind::InvalidBaseUrl,
+                Details {
+                    original: serde_json::json!(href),
+                    value: serde_json::json!("ignored"),
+                    confidence: Some("high".to_owned()),
+                    reason: Some(
+                        ("base href 的 HTTP/HTTPS 地址校验失败，使用页面 URL 作为基址").to_owned(),
+                    ),
+                    ..Default::default()
+                },
+            )),
         }
     }
     if let Some(base) = &base_url {
@@ -110,6 +204,15 @@ pub fn parse(
     ir.metadata.extend(crate::site::metadata(document));
     collect_assets(root, &base_url, &mut ir, &snapshot);
     parse_blocks(root, &base_url, no_inference, &snapshot, &mut ir);
+    for block in &mut ir.blocks {
+        block.visit_runs_mut(&mut |run| {
+            run.source_nodes = run
+                .source_nodes
+                .iter()
+                .filter_map(|id| snapshot.resolve(id).map(str::to_owned))
+                .collect();
+        });
+    }
     ir.original_nodes = snapshot.nodes;
     crate::audit::append_diagnostics(&mut ir);
     crate::inference::annotate(&mut ir, no_inference);
@@ -223,7 +326,8 @@ fn collect_candidates<'a>(
                 visit_node(element, &context, &mut pending);
             }
         } else if let Node::Text(text) = child.value() {
-            if let Some(run) = text_run(text, &context) {
+            if let Some(mut run) = text_run(text, &context) {
+                run.source_nodes = vec![format!("{:?}", child.id())];
                 pending.push(run);
             }
         }
@@ -322,9 +426,17 @@ fn parse_blocks(
                         .is_some_and(|a| a.id() == el.id())
                 })
                 .map(|row| {
-                    row_groups.push(row.parent().and_then(ElementRef::wrap)
-                        .filter(|parent| matches!(parent.value().name(), "thead" | "tbody" | "tfoot"))
-                        .map(|parent| crate::model::RowGroup { tag: parent.value().name().into(), source_node: snapshot.element_id(parent).into() }));
+                    row_groups.push(
+                        row.parent()
+                            .and_then(ElementRef::wrap)
+                            .filter(|parent| {
+                                matches!(parent.value().name(), "thead" | "tbody" | "tfoot")
+                            })
+                            .map(|parent| crate::model::RowGroup {
+                                tag: parent.value().name().into(),
+                                source_node: snapshot.element_id(parent).into(),
+                            }),
+                    );
                     row.children()
                         .filter_map(ElementRef::wrap)
                         .filter(|cell| matches!(cell.value().name(), "td" | "th"))
@@ -361,7 +473,25 @@ fn parse_blocks(
                                     let span = crate::table::row_span(cell, row);
                                     if let Some(raw) = cell.value().attr("rowspan") {
                                         if raw.parse::<usize>().ok() != Some(span) {
-                                            ir.warnings.push(serde_json::json!({"kind":"rowspan-normalized","original":raw,"value":span,"removed":false,"ir_field":"rows.rowspan","inferred":false,"confidence":"high","reason":"按当前行组剩余行数解析合并范围","source_nodes":[snapshot.element_id(cell)]}));
+                                            ir.warnings.push(Diagnostic::new(
+                                                NoteKind::RowspanNormalized,
+                                                Details {
+                                                    original: serde_json::json!(raw),
+                                                    value: serde_json::json!(span),
+                                                    removed: Some(false),
+                                                    ir_field: Some("rows.rowspan".to_owned()),
+                                                    inferred: Some(false),
+                                                    confidence: Some("high".to_owned()),
+                                                    reason: Some(
+                                                        ("按当前行组剩余行数解析合并范围")
+                                                            .to_owned(),
+                                                    ),
+                                                    source_nodes: vec![
+                                                        (snapshot.element_id(cell)).to_string()
+                                                    ],
+                                                    ..Default::default()
+                                                },
+                                            ));
                                         }
                                     }
                                     span
@@ -412,7 +542,22 @@ fn parse_blocks(
             .to_ascii_lowercase()
             .contains("mso-")
         {
-            ir.warnings.push(serde_json::json!({"kind":"word-style","original":el.value().attr("style"),"removed":true,"ir_field":"original_nodes.attrs.style","inferred":false,"confidence":"high","reason":"原始样式包含 Office 声明；支持的声明逐项映射，完整原值保留在节点快照中","source_nodes":[node]}));
+            ir.warnings.push(Diagnostic::new(
+                NoteKind::WordStyle,
+                Details {
+                    original: serde_json::json!(el.value().attr("style")),
+                    removed: Some(true),
+                    ir_field: Some("original_nodes.attrs.style".to_owned()),
+                    inferred: Some(false),
+                    confidence: Some("high".to_owned()),
+                    reason: Some(
+                        ("原始样式包含 Office 声明；支持的声明逐项映射，完整原值保留在节点快照中")
+                            .to_owned(),
+                    ),
+                    source_nodes: vec![node.to_string()],
+                    ..Default::default()
+                },
+            ));
         }
         let indent = if let Some(value) = rules::style(el, "text-indent") {
             rules::evidence(
@@ -491,7 +636,16 @@ fn parse_blocks(
         });
         let signature = None;
         if inline.is_some() {
-            ir.warnings.push(serde_json::json!({"kind":"inline-block-group","value":"paragraph","confidence":"high","reason":"将连续行内节点按原顺序组合为段落","source_nodes":[node]}));
+            ir.warnings.push(Diagnostic::new(
+                NoteKind::InlineBlockGroup,
+                Details {
+                    value: serde_json::json!("paragraph"),
+                    confidence: Some("high".to_owned()),
+                    reason: Some("将连续行内节点按原顺序组合为段落".to_owned()),
+                    source_nodes: vec![node.to_string()],
+                    ..Default::default()
+                },
+            ));
         }
         let mut block_runs = inline.unwrap_or_else(|| runs(el, base_url));
         for run in &mut block_runs {
@@ -507,26 +661,62 @@ fn parse_blocks(
             .take_while(|ancestor| snapshot.contains(*ancestor))
             .find_map(|ancestor| {
                 let value = rules::style(ancestor, "line-height")?;
-                if matches!(value.to_ascii_lowercase().as_str(), "inherit" | "unset") { return None; }
-                let value = if value.eq_ignore_ascii_case("initial") { "normal".into() } else { value };
+                if matches!(value.to_ascii_lowercase().as_str(), "inherit" | "unset") {
+                    return None;
+                }
+                let value = if value.eq_ignore_ascii_case("initial") {
+                    "normal".into()
+                } else {
+                    value
+                };
                 let inherited = ancestor.id() != el.id();
-                let relative = inherited && ["em", "ex", "%", "ch"].iter().any(|unit| value.ends_with(unit));
+                let relative = inherited
+                    && ["em", "ex", "%", "ch"]
+                        .iter()
+                        .any(|unit| value.ends_with(unit));
                 let evidence = rules::evidence(
                     serde_json::json!(value),
                     if relative { "medium" } else { "high" },
-                    if relative { "继承祖先的相对行距声明；按相对单位记录，中等置信度" }
-                    else if inherited { "继承正文范围内最近祖先的 line-height 声明" }
-                    else { "原始段落含 line-height 声明" },
+                    if relative {
+                        "继承祖先的相对行距声明；按相对单位记录，中等置信度"
+                    } else if inherited {
+                        "继承正文范围内最近祖先的 line-height 声明"
+                    } else {
+                        "原始段落含 line-height 声明"
+                    },
                     snapshot.element_id(ancestor),
                 );
                 if relative {
-                    ir.warnings.push(serde_json::json!({"kind":"relative-line-height","value":evidence.value,"confidence":evidence.confidence,"reason":evidence.reason,"source_nodes":evidence.source_nodes,"inferred":true,"ir_field":"blocks.line_height"}));
+                    ir.warnings.push(Diagnostic::new(
+                        NoteKind::RelativeLineHeight,
+                        Details {
+                            value: serde_json::json!(evidence.value),
+                            confidence: Some((evidence.confidence).to_owned()),
+                            reason: Some((evidence.reason).to_owned()),
+                            source_nodes: evidence.source_nodes.clone(),
+                            inferred: Some(true),
+                            ir_field: Some("blocks.line_height".to_owned()),
+                            ..Default::default()
+                        },
+                    ));
                 }
                 Some(evidence)
             });
         let word_structure = crate::word::paragraph_structure(el, &node, no_inference);
         if let Some(evidence) = &word_structure {
-            ir.warnings.push(serde_json::json!({"kind":"word-paragraph-structure","value":evidence.value,"confidence":evidence.confidence,"reason":evidence.reason,"source_nodes":evidence.source_nodes,"inferred":!no_inference,"removed":false,"ir_field":"blocks.word_structure"}));
+            ir.warnings.push(Diagnostic::new(
+                NoteKind::WordParagraphStructure,
+                Details {
+                    value: serde_json::json!(evidence.value),
+                    confidence: Some((evidence.confidence).to_owned()),
+                    reason: Some((evidence.reason).to_owned()),
+                    source_nodes: evidence.source_nodes.clone(),
+                    inferred: Some(!no_inference),
+                    removed: Some(false),
+                    ir_field: Some("blocks.word_structure".to_owned()),
+                    ..Default::default()
+                },
+            ));
         }
         ir.blocks.push(Block {
             row_groups: Vec::new(),
