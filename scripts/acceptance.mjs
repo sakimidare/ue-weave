@@ -21,6 +21,13 @@ if (![max, pageLimit].every(n => Number.isInteger(n) && n > 0)) throw new Error(
 const binary = join(project, 'target/debug/ue-weave');
 const seed = 'https://jwc.seu.edu.cn/_t3454/zxdt/list.psp';
 const escape = value => String(value ?? '').replace(/[&<>"']/g, ch => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+const errorCode = (stdout, stderr) => {
+  try {
+    const code = JSON.parse(stdout)?.code;
+    if (typeof code === 'string' && /^[EWN]\d{4}$/.test(code)) return code;
+  } catch {}
+  return stderr.match(/error\[([EWN]\d{4})\]/)?.[1] ?? null;
+};
 const pause = () => new Promise(done => setTimeout(done, 350));
 function run(command, argv, timeout = 90000) {
   return new Promise(done => {
@@ -79,8 +86,16 @@ for (const [url, title] of articles) {
   if (args.includes('--include-metadata')) command.push('--include-metadata');
   if (args.includes('--download-attachments')) command.push('--download-attachments');
   const result = await run(binary, command, 180000);
-  await writeFile(join(destination, 'run.log'), `${url}\n${result.stderr}\n${result.stdout}`);
   const record = { index, url, title, directory, ok: result.code === 0, pdf: false };
+  let log = `${url}\n${result.stderr}\n${result.stdout}`;
+  if (!record.ok) {
+    const code = errorCode(result.stdout, result.stderr);
+    if (code) {
+      const explain = await run(binary, ['--explain', code]);
+      log += `\n--- ue-weave --explain ${code} ---\n${explain.stdout}${explain.stderr}`;
+    }
+  }
+  await writeFile(join(destination, 'run.log'), log);
   if (record.ok) {
     const ir = JSON.parse(await readFile(join(destination, 'reconstructed.json'), 'utf8'));
     record.title = ir.metadata.title || title || id;
