@@ -25,6 +25,7 @@ pub struct Output {
 #[derive(Clone, Copy, Default, serde::Serialize)]
 pub struct Settings {
     pub include_metadata: bool,
+    pub repair_corrupt_fonts: bool,
     pub strip_font_family: bool,
     pub strip_font_size: bool,
     pub strip_text_color: bool,
@@ -50,6 +51,9 @@ pub struct Overrides {
     /// 在正文上方显示标题、日期、作者等信息；所有预设默认关闭。
     #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true", value_name="BOOL", hide_possible_values=true)]
     include_metadata: Option<bool>,
+    /// 关闭损坏字体名称修复。
+    #[arg(long, default_value_t = false, action = clap::ArgAction::SetTrue)]
+    no_repair_corrupt_fonts: bool,
     /// 移除字体名称，可覆盖 --strip-fonts。
     #[arg(long, num_args=0..=1, require_equals=true, default_missing_value="true", value_name="BOOL", hide_possible_values=true)]
     strip_font_family: Option<bool>,
@@ -125,6 +129,7 @@ impl Profile {
                 ..Settings::default()
             },
         };
+        settings.repair_corrupt_fonts = true;
         settings.expand_groups();
         settings
     }
@@ -158,6 +163,9 @@ impl Overrides {
             drop_empty_paragraphs,
             native_markdown
         );
+        if self.no_repair_corrupt_fonts {
+            settings.repair_corrupt_fonts = false;
+        }
         settings.expand_groups();
         override_fields!(
             strip_font_family,
@@ -195,7 +203,27 @@ pub fn prepare_documents(source: &Ir, settings: Settings) -> Output {
     Output { ir, changes }
 }
 
-fn run(run: &mut Run, settings: Settings) {
+fn run(run: &mut Run, settings: Settings, changes: &mut Vec<Value>, record_changes: bool) {
+    if settings.repair_corrupt_fonts {
+        if let Some(font) = &mut run.font_family {
+            let repaired = crate::safety::repair_corrupted_font(font);
+            if repaired != *font {
+                if record_changes {
+                    changes.push(json!({
+                        "kind": "corrupt-font-repair",
+                        "field": "runs.font_family",
+                        "original": font,
+                        "value": repaired,
+                        "inferred": true,
+                        "confidence": "high",
+                        "source_nodes": run.source_nodes,
+                        "reason": "修复编辑器序列化产生的 undefined 字体名包装"
+                    }));
+                }
+                *font = repaired;
+            }
+        }
+    }
     if settings.strip_font_family {
         run.font_family = None;
     }
@@ -262,11 +290,11 @@ fn transform(
             }
         }
         for item in &mut block.runs {
-            run(item, settings);
+            run(item, settings, changes, record_changes);
         }
         if let Some(caption) = &mut block.caption {
             for item in caption {
-                run(item, settings);
+                run(item, settings, changes, record_changes);
             }
         }
         if settings.strip_indent {
@@ -303,7 +331,7 @@ fn transform(
                 cell.styles.remove("vertical-align");
             }
             for item in &mut cell.runs {
-                run(item, settings);
+                run(item, settings, changes, record_changes);
             }
             transform(&mut cell.blocks, settings, changes, record_changes);
         }
@@ -323,6 +351,9 @@ fn transform(
 
 fn trim_leading_spaces(block: &mut Block, changes: &mut Vec<Value>, record_changes: bool) {
     if !matches!(block.kind.as_str(), "paragraph" | "heading" | "signature") {
+        return;
+    }
+    if block.runs.iter().any(|run| run.inline_kind.is_some()) {
         return;
     }
     // 保留预格式化内容和行内代码。
@@ -544,5 +575,70 @@ mod tests {
             assert!(!output.changes.is_empty());
         }
         assert_eq!(serde_json::to_string(&source).unwrap(), snapshot);
+    }
+
+    #[test]
+    fn corrupt_font_repair_is_enabled_by_default_and_can_be_disabled() {
+        let document = scraper::Html::parse_document(
+            "<div class='Article_Content'><p><span style='font-family:微软雅黑, undefinedundefinedmicrosoft yaheiundefinedundefined'>文字</span></p></div>",
+        );
+        let source = crate::parser::parse(&document, ".Article_Content", false, None).unwrap();
+        for profile in [
+            Profile::Conservative,
+            Profile::Balanced,
+            Profile::Aggressive,
+        ] {
+            let output = prepare(&source, profile.settings());
+            let mut fonts = Vec::new();
+            for block in &output.ir.blocks {
+                let mut block = block.clone();
+                block.visit_runs_mut(&mut |run| {
+                    if let Some(font) = &run.font_family {
+                        fonts.push(font.clone());
+                    }
+                });
+            }
+            assert!(output
+                .changes
+                .iter()
+                .any(|change| change["kind"] == "corrupt-font-repair"));
+            if matches!(profile, Profile::Conservative) {
+                assert_eq!(
+                    fonts.first().map(String::as_str),
+                    Some("微软雅黑, \"microsoft yahei\"")
+                );
+            }
+        }
+        let options = Overrides {
+            no_repair_corrupt_fonts: true,
+            ..Default::default()
+        };
+        let output = prepare_documents(&source, options.resolve(Profile::Conservative));
+        for rendered in [
+            crate::renderer::render(&output.ir),
+            crate::markdown::render(&output.ir),
+            crate::typst::render(&output.ir),
+        ] {
+            assert!(
+                rendered.contains("undefinedundefinedmicrosoft yaheiundefinedundefined"),
+                "{rendered}"
+            );
+        }
+        let mut fonts = Vec::new();
+        for block in &output.ir.blocks {
+            let mut block = block.clone();
+            block.visit_runs_mut(&mut |run| {
+                if let Some(font) = &run.font_family {
+                    fonts.push(font.clone());
+                }
+            });
+        }
+        assert!(fonts
+            .iter()
+            .any(|font| font == "微软雅黑, undefinedundefinedmicrosoft yaheiundefinedundefined"));
+        assert!(!output
+            .changes
+            .iter()
+            .any(|change| change["kind"] == "corrupt-font-repair"));
     }
 }

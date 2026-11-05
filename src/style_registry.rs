@@ -96,7 +96,11 @@ pub fn value(property: &str, value: &str) -> bool {
         || TABLE_STYLES.contains(&property)
         || CELL_STYLES.contains(&property)
         || ["margin-top", "margin-bottom", "list-style-type"].contains(&property))
-        && crate::safety::safe_css(value)
+        && if property == "font-family" {
+            crate::safety::safe_font_family(value)
+        } else {
+            crate::safety::safe_css(value)
+        }
 }
 
 #[cfg(test)]

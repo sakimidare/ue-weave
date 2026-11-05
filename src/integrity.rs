@@ -8,12 +8,22 @@ fn visible_text(root: ElementRef) -> String {
         if node.ancestors().filter_map(ElementRef::wrap).any(|parent| {
             matches!(
                 parent.value().name(),
-                "script" | "style" | "iframe" | "object" | "embed"
-            )
+                "script" | "style" | "iframe" | "object" | "embed" | "svg" | "math"
+            ) || crate::media::bookmark(parent)
         }) {
             continue;
         }
         if let Some(element) = ElementRef::wrap(node) {
+            if crate::media::bookmark(element) {
+                continue;
+            }
+            if matches!(element.value().name(), "svg" | "math") {
+                text.push_str(&crate::media::alternative(element));
+            } else if crate::media::special(element.value().name()) {
+                for (_, label) in crate::media::links(element) {
+                    text.push_str(&label);
+                }
+            }
             if let Some((_, title)) = crate::attachment::embedded_pdf(element) {
                 text.push_str(&title);
             }
@@ -24,14 +34,19 @@ fn visible_text(root: ElementRef) -> String {
                 .filter_map(ElementRef::wrap)
                 .any(|parent| crate::attachment::embedded_pdf(parent).is_some());
             if !excluded {
-                text.push_str(value);
+                let literal = node.ancestors().filter_map(ElementRef::wrap).any(|el| {
+                    el.value().name() == "pre"
+                        || crate::model::InlineKind::from_tag(el.value().name()).is_some()
+                });
+                if literal {
+                    text.push_str(value);
+                } else {
+                    text.push_str(&crate::rules::clean_sentinel(value));
+                }
             }
         }
     }
-    crate::rules::clean_sentinel(&text)
-        .chars()
-        .filter(|ch| !ch.is_whitespace())
-        .collect()
+    text.chars().filter(|ch| !ch.is_whitespace()).collect()
 }
 
 pub fn check(root: ElementRef, ir: &mut crate::model::Ir) {
@@ -124,15 +139,28 @@ fn resources(
             matches!(
                 parent.value().name(),
                 "script" | "style" | "iframe" | "object" | "embed"
-            ) || (parent
-                .value()
-                .classes()
-                .any(|class| class == "wp_pdf_player")
-                && parent.value().attr("pdfsrc").is_some())
+            ) || crate::media::bookmark(parent)
+                || matches!(parent.value().name(), "svg" | "math")
+                || (parent
+                    .value()
+                    .classes()
+                    .any(|class| class == "wp_pdf_player")
+                    && parent.value().attr("pdfsrc").is_some())
         }) {
             continue;
         }
         let pdf = node.value().classes().any(|class| class == "wp_pdf_player");
+        if crate::media::bookmark(node) {
+            continue;
+        }
+        if crate::media::special(node.value().name())
+            && !matches!(node.value().name(), "svg" | "math")
+        {
+            for (url, _) in crate::media::links(node) {
+                let url = crate::rules::absolute_url(base.as_ref(), &url);
+                *result.entry(format!("link:{url}")).or_insert(0) += 1;
+            }
+        }
         let resource = if pdf {
             node.value().attr("pdfsrc").map(|url| ("link", url))
         } else {

@@ -14,6 +14,9 @@ fn collect_assets(
     snapshot: &crate::snapshot::Snapshot,
 ) {
     for element in root.select(&Selector::parse(".wp_pdf_player[pdfsrc]").unwrap()) {
+        if crate::media::hidden_asset(element) {
+            continue;
+        }
         if let Some((href, title)) = crate::attachment::embedded_pdf(element) {
             let absolute = rules::absolute_url(base_url.as_ref(), &href);
             let node = snapshot.element_id(element);
@@ -45,6 +48,9 @@ fn collect_assets(
         .filter_map(ElementRef::wrap)
         .filter(|element| matches!(element.value().name(), "img" | "v:imagedata"))
     {
+        if crate::media::hidden_asset(image) {
+            continue;
+        }
         if image.value().name() == "v:imagedata" {
             for property in ["width", "height"] {
                 if let Some(value) = crate::word::vml_dimension(image, property) {
@@ -112,6 +118,9 @@ fn collect_assets(
         }
     }
     for link in root.select(&Selector::parse("a").unwrap()) {
+        if crate::media::hidden_asset(link) {
+            continue;
+        }
         if let Some(href) = link.value().attr("href") {
             if !crate::safety::safe_url(href, false) {
                 continue;
@@ -176,7 +185,11 @@ pub fn parse(
         .select(&Selector::parse("base[href]").unwrap())
         .next()
     {
-        let href = base.value().attr("href").unwrap();
+        let Some(href) = base.value().attr("href") else {
+            return Err(crate::error::RecoverError::Arguments(
+                "base 元素缺少 href 属性".into(),
+            ));
+        };
         let resolved = base_url
             .as_ref()
             .and_then(|url| url.join(href).ok())
@@ -203,7 +216,11 @@ pub fn parse(
     }
     ir.metadata.extend(crate::site::metadata(document));
     collect_assets(root, &base_url, &mut ir, &snapshot);
-    parse_blocks(root, &base_url, no_inference, &snapshot, &mut ir);
+    if crate::depth::exceeds(root) {
+        crate::depth::fallback(root, &snapshot, &mut ir);
+    } else {
+        parse_blocks(root, &base_url, no_inference, &snapshot, &mut ir, 0);
+    }
     ir.original_nodes = snapshot.nodes;
     crate::audit::append_diagnostics(&mut ir);
     crate::inference::annotate(&mut ir, no_inference);
@@ -217,47 +234,11 @@ enum BlockCandidate<'a> {
 }
 
 fn is_content_block(tag: &str) -> bool {
-    matches!(
-        tag,
-        "p" | "li"
-            | "ul"
-            | "ol"
-            | "h1"
-            | "h2"
-            | "h3"
-            | "h4"
-            | "h5"
-            | "h6"
-            | "table"
-            | "blockquote"
-            | "pre"
-            | "hr"
-    )
+    crate::tag_registry::block(tag)
 }
 
 fn is_container(tag: &str) -> bool {
-    matches!(
-        tag,
-        "div"
-            | "section"
-            | "article"
-            | "figure"
-            | "figcaption"
-            | "header"
-            | "footer"
-            | "main"
-            | "aside"
-            | "nav"
-            | "address"
-            | "center"
-            | "fieldset"
-            | "legend"
-            | "dl"
-            | "dt"
-            | "dd"
-            | "details"
-            | "summary"
-    )
+    crate::tag_registry::container(tag)
 }
 
 fn collect_candidates<'a>(
@@ -289,7 +270,13 @@ fn collect_candidates<'a>(
     for child in root.children() {
         if let Some(element) = ElementRef::wrap(child) {
             let name = element.value().name();
-            if matches!(name, "script" | "style" | "iframe" | "object" | "embed") {
+            if crate::media::bookmark(element)
+                || matches!(name, "script" | "style" | "object" | "embed")
+            {
+                continue;
+            }
+            if crate::media::special(name) {
+                visit_node(element, &context, snapshot, &mut pending);
                 continue;
             }
             if is_content_block(name) || crate::attachment::embedded_pdf(element).is_some() {
@@ -337,7 +324,12 @@ fn parse_blocks(
     no_inference: bool,
     snapshot: &crate::snapshot::Snapshot,
     ir: &mut Ir,
+    depth: usize,
 ) {
+    if depth >= crate::depth::BLOCK_LIMIT {
+        crate::depth::fallback(root, snapshot, ir);
+        return;
+    }
     let mut candidates = Vec::new();
     collect_candidates(
         root,
@@ -359,18 +351,30 @@ fn parse_blocks(
             .as_ref()
             .map(|runs| runs.iter().map(|r| r.text.as_str()).collect())
             .unwrap_or_else(|| rules::text(el));
-        let text = rules::clean_sentinel(&text);
+        let text = if name == "pre" {
+            crate::code::text(el)
+        } else {
+            rules::clean_sentinel(&text)
+        };
         let node = snapshot.element_id(el).to_string();
         if matches!(
             name.as_str(),
-            "ul" | "ol" | "li" | "blockquote" | "pre" | "hr"
+            "ul" | "ol" | "li" | "blockquote" | "pre" | "hr" | "dl" | "dt" | "dd"
         ) {
             let mut child_ir = Ir::default();
             if !matches!(name.as_str(), "pre" | "hr") {
-                parse_blocks(el, base_url, no_inference, snapshot, &mut child_ir);
+                parse_blocks(
+                    el,
+                    base_url,
+                    no_inference,
+                    snapshot,
+                    &mut child_ir,
+                    depth + 1,
+                );
             }
             ir.warnings.extend(child_ir.warnings);
             ir.blocks.push(Block {
+                code_language: (name == "pre").then(|| crate::code::language(el)).flatten(),
                 row_groups: Vec::new(),
                 column_groups: Vec::new(),
                 table_styles: Default::default(),
@@ -394,6 +398,9 @@ fn parse_blocks(
                     "li" => "list_item",
                     "blockquote" => "quote",
                     "pre" => "code_block",
+                    "dl" => "definition_list",
+                    "dt" => "definition_term",
+                    "dd" => "definition_description",
                     "hr" => "horizontal_rule",
                     _ => "list",
                 }
@@ -453,7 +460,14 @@ fn parse_blocks(
                                 .next()
                                 .is_some()
                             {
-                                parse_blocks(cell, base_url, no_inference, snapshot, &mut child_ir);
+                                parse_blocks(
+                                    cell,
+                                    base_url,
+                                    no_inference,
+                                    snapshot,
+                                    &mut child_ir,
+                                    depth + 1,
+                                );
                             }
                             ir.warnings.extend(child_ir.warnings);
                             let mut content = Vec::new();
@@ -509,6 +523,7 @@ fn parse_blocks(
                 })
                 .collect();
             ir.blocks.push(Block {
+                code_language: None,
                 row_groups,
                 column_groups: crate::table::column_groups(el, snapshot),
                 table_styles: crate::table::table_styles(el, &node),
@@ -595,12 +610,22 @@ fn parse_blocks(
         };
         let align = rules::style(el, "text-align")
             .or_else(|| el.value().attr("align").map(|value| value.to_string()))
+            .or_else(|| (el.value().name() == "center").then(|| "center".into()))
             .or_else(|| {
                 el.ancestors()
                     .filter_map(ElementRef::wrap)
                     .find_map(|parent| {
                         rules::style(parent, "text-align")
-                            .or_else(|| parent.value().attr("align").map(str::to_string))
+                            .or_else(|| {
+                                if parent.value().name() == "table" {
+                                    None
+                                } else {
+                                    parent.value().attr("align").map(str::to_string)
+                                }
+                            })
+                            .or_else(|| {
+                                (parent.value().name() == "center").then(|| "center".into())
+                            })
                     })
             })
             .unwrap_or("unknown".into());
@@ -725,6 +750,7 @@ fn parse_blocks(
             ));
         }
         ir.blocks.push(Block {
+            code_language: None,
             row_groups: Vec::new(),
             column_groups: Vec::new(),
             table_styles: Default::default(),

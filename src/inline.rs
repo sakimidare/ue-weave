@@ -4,6 +4,7 @@ use url::Url;
 
 #[derive(Clone, Default)]
 pub(crate) struct RunContext {
+    inline_kind: Option<crate::model::InlineKind>,
     bold: bool,
     italic: bool,
     underline: bool,
@@ -21,6 +22,7 @@ impl RunContext {
     pub(crate) fn for_element(&self, element: ElementRef) -> Self {
         let name = element.value().name();
         Self {
+            inline_kind: crate::model::InlineKind::from_tag(name).or(self.inline_kind),
             bold: match rules::style(element, "font-weight")
                 .map(|v| v.to_ascii_lowercase())
                 .as_deref()
@@ -113,8 +115,13 @@ fn inherited_value(value: Option<String>, parent: &Option<String>) -> Option<Str
 }
 
 pub(crate) fn text_run(text: &str, context: &RunContext) -> Option<Run> {
-    let text = rules::clean_sentinel(text);
+    let text = if context.inline_kind.is_some() {
+        text.to_owned()
+    } else {
+        rules::clean_sentinel(text)
+    };
     (!text.is_empty()).then(|| Run {
+        inline_kind: context.inline_kind,
         source_nodes: Vec::new(),
         line_break: false,
         text,
@@ -145,6 +152,7 @@ pub(crate) fn image_run(
             .attr("src")
             .is_some_and(|value| crate::safety::safe_url(value, true)))
     .then(|| Run {
+        inline_kind: None,
         source_nodes: snapshot_node(snapshot, element.id()),
         line_break: false,
         image_attributes: Some(crate::model::ImageAttributes {
@@ -182,9 +190,48 @@ pub(crate) fn visit_node(
     snapshot: &Snapshot,
     output: &mut Vec<Run>,
 ) {
+    if crate::media::bookmark(element) {
+        return;
+    }
+    if crate::media::special(element.value().name()) {
+        if matches!(element.value().name(), "svg" | "math") {
+            if let Some(mut run) = text_run(&crate::media::alternative(element), context) {
+                run.source_nodes = snapshot_node(snapshot, element.id());
+                output.push(run);
+            }
+            return;
+        }
+        for (url, label) in crate::media::links(element) {
+            if let Some(mut run) = text_run(&label, context) {
+                run.link = Some(rules::absolute_url(context.base_url.as_ref(), &url));
+                run.source_nodes = snapshot_node(snapshot, element.id());
+                output.push(run);
+            }
+        }
+        if element.value().name() == "iframe" {
+            return;
+        }
+    }
     if let Some((href, title)) = crate::attachment::embedded_pdf(element) {
-        let mut run =
-            text_run(&title, &context.for_element(element)).expect("PDF title is nonempty");
+        let mut run = text_run(&title, &context.for_element(element)).unwrap_or_else(|| Run {
+            inline_kind: None,
+            line_break: false,
+            text: title,
+            bold: context.bold,
+            italic: context.italic,
+            underline: context.underline,
+            strike: context.strike,
+            font_family: context.font_family.clone(),
+            font_size: context.font_size.clone(),
+            color: context.color.clone(),
+            background_color: context.background_color.clone(),
+            vertical_align: context.vertical_align.clone(),
+            link: None,
+            image: None,
+            image_attributes: None,
+            source: "inferred".into(),
+            source_nodes: Vec::new(),
+        });
         run.link = Some(rules::absolute_url(context.base_url.as_ref(), &href));
         run.source_nodes = snapshot_node(snapshot, element.id());
         output.push(run);

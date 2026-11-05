@@ -1,6 +1,6 @@
 //! 校验 DNS 返回地址及每次重定向的目标。
 use reqwest::{
-    blocking::Client,
+    blocking::Client as HttpClient,
     dns::{Addrs, Name, Resolve, Resolving},
     header::HeaderMap,
 };
@@ -20,6 +20,8 @@ pub(crate) enum RoutingError {
     InvalidAddress,
     #[error("域名解析失败：{0}")]
     Dns(#[source] io::Error),
+    #[error("重定向次数达到 10 次")]
+    RedirectLimit,
 }
 
 fn policy_error() -> RoutingError {
@@ -112,23 +114,62 @@ pub fn client(
     allow_private: bool,
     headers: HeaderMap,
 ) -> Result<Client, reqwest::Error> {
-    let builder = Client::builder()
+    let builder = HttpClient::builder()
         .no_proxy()
         .timeout(timeout)
         .user_agent(concat!("ue-weave/", env!("CARGO_PKG_VERSION")))
-        .default_headers(headers)
-        .redirect(redirect_policy(allow_private))
+        .redirect(reqwest::redirect::Policy::none())
         .dns_resolver(Arc::new(CheckedResolver { allow_private }));
-    builder.build()
+    builder.build().map(|inner| Client {
+        inner,
+        headers,
+        origin: None,
+    })
+}
+
+/// 自定义请求头限定到输入网页的来源（协议、主机和端口）。
+pub struct Client {
+    inner: HttpClient,
+    headers: HeaderMap,
+    origin: Option<url::Origin>,
+}
+
+impl Client {
+    pub fn set_origin(&mut self, url: Option<&str>) {
+        self.origin = url
+            .and_then(|url| Url::parse(url).ok())
+            .map(|url| url.origin());
+    }
+
+    pub fn get(&self, url: &Url) -> reqwest::blocking::RequestBuilder {
+        let request = self.inner.get(url.clone());
+        if self.origin.as_ref() == Some(&url.origin()) {
+            request.headers(self.headers.clone())
+        } else {
+            request
+        }
+    }
+}
+
+#[cfg(test)]
+impl From<HttpClient> for Client {
+    fn from(inner: HttpClient) -> Self {
+        Self {
+            inner,
+            headers: HeaderMap::new(),
+            origin: None,
+        }
+    }
 }
 
 pub fn headers(values: &[(String, String)]) -> Result<HeaderMap, String> {
     let mut map = HeaderMap::new();
-    for (name, value) in values {
+    for (index, (name, value)) in values.iter().enumerate() {
         let name = reqwest::header::HeaderName::from_bytes(name.as_bytes())
-            .map_err(|_| format!("HTTP header 名称无效：{name}"))?;
-        let value = reqwest::header::HeaderValue::from_str(value)
+            .map_err(|_| format!("第 {} 个 HTTP header 名称无效", index + 1))?;
+        let mut value = reqwest::header::HeaderValue::from_str(value)
             .map_err(|_| format!("HTTP header 值无效：{name}"))?;
+        value.set_sensitive(true);
         if matches!(
             name.as_str(),
             "host" | "content-length" | "connection" | "transfer-encoding"
@@ -140,21 +181,40 @@ pub fn headers(values: &[(String, String)]) -> Result<HeaderMap, String> {
     Ok(map)
 }
 
-fn redirect_policy(allow_private: bool) -> reqwest::redirect::Policy {
-    reqwest::redirect::Policy::custom(move |attempt| {
-        if attempt.previous().len() >= 10 {
-            return attempt.error("重定向次数达到 10 次");
-        }
-        match check_url(attempt.url(), allow_private) {
-            Ok(()) => attempt.follow(),
-            Err(error) => attempt.error(error),
-        }
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn custom_headers_match_scheme_host_and_port() {
+        let mut client = client(
+            Duration::from_secs(2),
+            false,
+            headers(&[("Authorization".into(), "Bearer example".into())]).unwrap(),
+        )
+        .unwrap();
+        client.set_origin(Some("https://example.org/article"));
+        for (url, expected) in [
+            ("https://example.org/image.png", true),
+            ("https://example.org:443/attachment", true),
+            ("http://example.org/image.png", false),
+            ("https://example.org:8443/image.png", false),
+            ("https://other.example/image.png", false),
+        ] {
+            let request = client.get(&Url::parse(url).unwrap()).build().unwrap();
+            assert_eq!(
+                request.headers().contains_key("authorization"),
+                expected,
+                "{url}"
+            );
+        }
+        client.set_origin(None);
+        let request = client
+            .get(&Url::parse("https://example.org/image.png").unwrap())
+            .build()
+            .unwrap();
+        assert!(!request.headers().contains_key("authorization"));
+    }
 
     #[test]
     fn validates_custom_headers_and_rejects_managed_names() {
@@ -167,6 +227,17 @@ mod tests {
         ] {
             assert!(headers(&value).is_err());
         }
+    }
+
+    #[test]
+    fn later_header_values_replace_case_insensitively() {
+        let map = headers(&[
+            ("X-Test".into(), "from-file".into()),
+            ("x-test".into(), "from-cli".into()),
+        ])
+        .unwrap();
+        assert_eq!(map.get("X-Test").unwrap(), "from-cli");
+        assert_eq!(map.len(), 1);
     }
     #[test]
     fn redirect_to_loopback_stops_before_second_request() {
@@ -184,15 +255,15 @@ mod tests {
             let _ = stream.read(&mut [0; 2048]);
             write!(stream, "HTTP/1.1 302 Found\r\nLocation: http://{target_addr}/private\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
         });
-        let client = Client::builder()
+        let client = HttpClient::builder()
             .no_proxy()
             .timeout(Duration::from_secs(2))
             .resolve("public.example", source_addr)
-            .redirect(redirect_policy(false))
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .unwrap();
         let result = crate::network::fetch(
-            &client,
+            &client.into(),
             &format!("http://public.example:{}/", source_addr.port()),
             crate::network::Policy::default(),
             Some(1024),

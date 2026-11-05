@@ -1,11 +1,11 @@
 use crate::diagnostic::{Details, Diagnostic, WarningKind};
+use crate::network_policy::Client;
 use crate::{
     error::{AssetError, RecoverError, Result},
     log::Logger,
     model::Ir,
     network::{self, Policy},
 };
-use reqwest::blocking::Client;
 use sha2::{Digest, Sha256};
 use std::{collections::HashMap, fs, io::Write, path::Path};
 use url::Url;
@@ -391,11 +391,12 @@ mod tests {
             None,
         )
         .unwrap();
-        let client = Client::builder()
+        let client: Client = reqwest::blocking::Client::builder()
             .no_proxy()
             .timeout(Duration::from_secs(2))
             .build()
-            .unwrap();
+            .unwrap()
+            .into();
         let errors = download_attachments(
             &mut ir,
             &output,

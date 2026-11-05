@@ -7,13 +7,16 @@ mod asset_format;
 mod asset_name;
 mod attachment;
 mod audit;
+mod code;
 mod css;
+mod depth;
 mod diagnostic;
 mod document;
 mod downloader;
 mod error;
 mod explain;
 mod export;
+mod html;
 mod inference;
 mod inline;
 mod input;
@@ -21,6 +24,7 @@ mod integrity;
 mod ir_format;
 mod log;
 mod markdown;
+mod media;
 mod model;
 mod network;
 mod network_policy;
@@ -34,11 +38,14 @@ mod renderer;
 mod robustness;
 mod rules;
 mod safety;
+#[cfg(test)]
+mod semantics_tests;
 mod site;
 mod site_config;
 mod snapshot;
 mod style_registry;
 mod table;
+mod tag_registry;
 mod typst;
 mod word;
 
@@ -63,7 +70,7 @@ impl Error {
 impl Article {
     /// 解析指定选择器内的正文；source 用于补全相对链接，infer 控制格式推断。
     ///
-    /// 输入 HTML 仅作为文本解析，调用不会发起网络请求。
+    /// 解析输入 HTML。
     ///
     /// ```
     /// use ue_weave::Article;
@@ -80,7 +87,7 @@ impl Article {
         source: Option<&str>,
         infer: bool,
     ) -> Result<Self, Error> {
-        let document = scraper::Html::parse_document(html);
+        let document = crate::html::parse(html);
         Ok(Self(parser::parse(
             &document,
             selector,

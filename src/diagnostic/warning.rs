@@ -40,6 +40,8 @@ pub enum WarningKind {
     ExcludedElement,
     #[error("自定义列表标记需要检查")]
     CustomListMarker,
+    #[error("嵌套过深，已提取文本")]
+    NestingLimit,
 }
 impl WarningKind {
     pub fn code(self) -> &'static str {
@@ -62,6 +64,7 @@ impl WarningKind {
             Self::PossibleEditorFillCharacter => "W0016",
             Self::ExcludedElement => "W0017",
             Self::CustomListMarker => "W0018",
+            Self::NestingLimit => "W0019",
         }
     }
 }

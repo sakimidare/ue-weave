@@ -227,6 +227,9 @@ pub enum NetworkKind {
     #[serde(rename = "request_failed")]
     #[error("请求失败")]
     RequestFailed,
+    #[serde(rename = "redirect_limit")]
+    #[error("重定向次数超过上限")]
+    RedirectLimit,
 }
 impl NetworkKind {
     pub fn code(self) -> &'static str {
@@ -241,6 +244,7 @@ impl NetworkKind {
             Self::InvalidUrl => "E0108",
             Self::NetworkPolicy => "E0109",
             Self::RequestFailed => "E0110",
+            Self::RedirectLimit => "E0111",
         }
     }
 }
@@ -360,6 +364,7 @@ mod tests {
             NetworkKind::InvalidUrl,
             NetworkKind::NetworkPolicy,
             NetworkKind::RequestFailed,
+            NetworkKind::RedirectLimit,
         ];
         let codes: Vec<_> = errors
             .iter()

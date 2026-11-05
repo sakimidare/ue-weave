@@ -43,7 +43,6 @@ impl Context {
         original: Option<&str>,
     ) -> Option<Location> {
         let node = self.nodes.get(id)?;
-        // 包含直接父标签，并保留目标附近的实际相邻标签。
         let root = node
             .parent
             .as_ref()

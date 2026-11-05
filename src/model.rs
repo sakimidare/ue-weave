@@ -14,6 +14,8 @@ pub struct Evidence {
 #[derive(Serialize, Deserialize, Clone, Default)]
 #[serde(default, deny_unknown_fields)]
 pub struct Run {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub inline_kind: Option<InlineKind>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub source_nodes: Vec<String>,
     #[serde(default)]
@@ -41,6 +43,35 @@ pub struct Run {
     pub source: String,
 }
 
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum InlineKind {
+    Code,
+    Keyboard,
+    Sample,
+    Variable,
+}
+
+impl InlineKind {
+    pub fn tag(self) -> &'static str {
+        match self {
+            Self::Code => "code",
+            Self::Keyboard => "kbd",
+            Self::Sample => "samp",
+            Self::Variable => "var",
+        }
+    }
+    pub fn from_tag(tag: &str) -> Option<Self> {
+        match tag {
+            "code" => Some(Self::Code),
+            "kbd" => Some(Self::Keyboard),
+            "samp" => Some(Self::Sample),
+            "var" => Some(Self::Variable),
+            _ => None,
+        }
+    }
+}
+
 /// 图片的替代文字、说明及显式宽高。
 #[derive(Serialize, Deserialize, Clone, Default)]
 pub struct ImageAttributes {
@@ -51,9 +82,11 @@ pub struct ImageAttributes {
 }
 
 /// 段落、标题、列表或表格等正文块。
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Default)]
 #[serde(deny_unknown_fields)]
 pub struct Block {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub code_language: Option<String>,
     // 基础结构
     #[serde(rename = "type")]
     pub kind: String,

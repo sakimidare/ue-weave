@@ -10,6 +10,18 @@ pub fn table_styles(
         .iter()
         .filter_map(|key| {
             let value = crate::rules::style(table, key).or_else(|| {
+                if matches!(*key, "margin-left" | "margin-right") {
+                    return match (
+                        table.value().attr("align")?.to_ascii_lowercase().as_str(),
+                        *key,
+                    ) {
+                        ("center", _) | ("right", "margin-left") | ("left", "margin-right") => {
+                            Some("auto".into())
+                        }
+                        ("left", "margin-left") | ("right", "margin-right") => Some("0px".into()),
+                        _ => None,
+                    };
+                }
                 if !matches!(*key, "width" | "height") {
                     return None;
                 }

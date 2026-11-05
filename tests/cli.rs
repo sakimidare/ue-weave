@@ -125,9 +125,16 @@ fn error_reporting_uses_clap_argument_boundaries() {
 
 #[test]
 fn explain_runs_alone_and_covers_errors_warnings_and_notes() {
-    for code in ["E0109", "W0005", "N0002", "n0002"] {
+    let temporary = common::directory();
+    let codes = include_str!("../docs/explanations.md")
+        .lines()
+        .filter_map(|line| line.strip_prefix("## "))
+        .map(|line| line.split_whitespace().next().unwrap())
+        .chain(["n0002"]);
+    for code in codes {
         let output = common::command()
-            .args(["--explain", code])
+            .current_dir(temporary.path())
+            .args(["--explain", code, "--color", "never"])
             .output()
             .unwrap();
         assert!(output.status.success(), "{:?}", output);

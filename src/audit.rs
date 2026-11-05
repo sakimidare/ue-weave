@@ -1,55 +1,71 @@
 //! 从原始 DOM 生成诊断，单独检查正文块提取过程涉及的属性。
-use crate::diagnostic::{Details, Diagnostic, DiagnosticKind, NoteKind, WarningKind};
+use crate::diagnostic::{Details, Diagnostic, NoteKind, WarningKind};
 use crate::model::Ir;
 use serde_json::json;
 
 /// 列出已有正文结构或文字格式映射的 HTML 标签。
 fn mapped_element(tag: &str) -> bool {
-    if matches!(tag, "thead" | "tbody" | "tfoot") {
-        return true;
-    }
     matches!(
-        tag,
-        "p" | "div"
-            | "span"
-            | "strong"
-            | "b"
-            | "em"
-            | "i"
-            | "u"
-            | "s"
-            | "strike"
-            | "del"
-            | "sup"
-            | "sub"
-            | "font"
-            | "br"
-            | "a"
-            | "img"
-            | "h1"
-            | "h2"
-            | "h3"
-            | "h4"
-            | "h5"
-            | "h6"
-            | "ul"
-            | "ol"
-            | "li"
-            | "table"
-            | "tr"
-            | "td"
-            | "th"
-            | "caption"
-            | "blockquote"
-            | "pre"
-            | "hr"
+        crate::tag_registry::handling(tag),
+        crate::tag_registry::Handling::Block
+            | crate::tag_registry::Handling::Inline
+            | crate::tag_registry::Handling::Container
     )
 }
 
 pub fn append_diagnostics(ir: &mut Ir) {
+    let mut literal_nodes = std::collections::HashSet::new();
+    let mut converted_subtrees = std::collections::HashSet::new();
+    let mut ueditor_code = std::collections::HashSet::new();
     for node in &ir.original_nodes {
         let id = &node["id"];
         let tag = node["tag"].as_str().unwrap_or("");
+        if node["parent"]
+            .as_str()
+            .is_some_and(|parent| converted_subtrees.contains(parent))
+        {
+            converted_subtrees.insert(id.as_str().unwrap_or("").to_owned());
+            continue;
+        }
+        let bookmark = tag == "span"
+            && node["attrs"]["id"]
+                .as_str()
+                .is_some_and(|id| id.to_ascii_lowercase().starts_with("_baidu_bookmark_"));
+        if bookmark || matches!(tag, "svg" | "math" | "iframe") {
+            converted_subtrees.insert(id.as_str().unwrap_or("").to_owned());
+        }
+        if bookmark {
+            ir.warnings.push(Diagnostic::new(
+                NoteKind::EditorBookmark,
+                Details {
+                    original: node["attrs"].clone(),
+                    removed: Some(true),
+                    source_nodes: vec![id.as_str().unwrap_or("").into()],
+                    ..Default::default()
+                },
+            ));
+            continue;
+        }
+        let ue_code = (tag == "pre"
+            && node["attrs"]["class"].as_str().is_some_and(|class| {
+                class
+                    .split(';')
+                    .any(|part| part.trim().starts_with("brush:"))
+            }))
+            || node["parent"]
+                .as_str()
+                .is_some_and(|parent| ueditor_code.contains(parent));
+        if ue_code {
+            ueditor_code.insert(id.as_str().unwrap_or("").to_owned());
+        }
+        let literal = tag == "pre"
+            || crate::model::InlineKind::from_tag(tag).is_some()
+            || node["parent"]
+                .as_str()
+                .is_some_and(|parent| literal_nodes.contains(parent));
+        if literal {
+            literal_nodes.insert(id.as_str().unwrap_or("").to_owned());
+        }
         let attachment_node = ir.attachments.iter().any(|attachment| {
             attachment["source_nodes"]
                 .as_array()
@@ -82,8 +98,22 @@ pub fn append_diagnostics(ir: &mut Ir) {
         }
         if node["type"] == "text" {
             let text = node["text"].as_str().unwrap_or("");
+            if ue_code && text.contains('\u{a0}') {
+                ir.warnings.push(Diagnostic::new(
+                    NoteKind::CodeWhitespace,
+                    Details {
+                        original: json!(text),
+                        value: json!(text.replace('\u{a0}', " ")),
+                        removed: Some(false),
+                        ir_field: Some("blocks.text".into()),
+                        source_nodes: vec![id.as_str().unwrap_or("").into()],
+                        reason: Some("brush 标记代码块中的不换行空格还原为普通空格".into()),
+                        ..Default::default()
+                    },
+                ));
+            }
             let cleaned = crate::rules::clean_sentinel(text);
-            if cleaned != text {
+            if cleaned != text && !literal {
                 ir.warnings.push(Diagnostic::new(
                     NoteKind::Undefinedundefined,
                     Details {
@@ -127,7 +157,7 @@ pub fn append_diagnostics(ir: &mut Ir) {
                     ));
                 }
             }
-            if nbsp > 0 || text.starts_with("  ") {
+            if !literal && (nbsp > 0 || text.starts_with("  ")) {
                 ir.warnings.push(Diagnostic::new(
                     NoteKind::Whitespace,
                     Details {
@@ -146,7 +176,7 @@ pub fn append_diagnostics(ir: &mut Ir) {
                 ));
             }
         }
-        if ["script", "style", "iframe", "object", "embed"].contains(&tag) {
+        if crate::tag_registry::handling(tag) == crate::tag_registry::Handling::Excluded {
             ir.warnings.push(Diagnostic::new(
                 WarningKind::ExcludedElement,
                 Details {
@@ -165,7 +195,7 @@ pub fn append_diagnostics(ir: &mut Ir) {
         }
         if !tag.is_empty()
             && !mapped_element(tag)
-            && !["script", "style", "iframe", "object", "embed"].contains(&tag)
+            && crate::tag_registry::handling(tag) != crate::tag_registry::Handling::Excluded
         {
             ir.warnings.push(Diagnostic::new(
                 WarningKind::UnsupportedStructure,
@@ -176,7 +206,16 @@ pub fn append_diagnostics(ir: &mut Ir) {
                     ir_field: Some("original_nodes".to_owned()),
                     inferred: Some(false),
                     confidence: Some("high".to_owned()),
-                    reason: Some("保留已支持的文字和图片".to_owned()),
+                    reason: Some(
+                        match tag {
+                            "iframe" | "video" | "audio" | "source" => {
+                                "媒体地址转为链接，保留备用文字"
+                            }
+                            "svg" | "math" => "保留图形说明或公式文字，图形布局未转换",
+                            _ => "保留文字和图片，容器语义未转换",
+                        }
+                        .to_owned(),
+                    ),
                     source_nodes: vec![id.as_str().unwrap_or_default().to_owned()],
                     ..Default::default()
                 },
@@ -409,14 +448,28 @@ pub fn append_diagnostics(ir: &mut Ir) {
                             ));
                             continue;
                         }
-                        if !crate::safety::safe_css(value.trim()) {
-                            let sentinel = crate::safety::corrupted_style(value);
+                        let sentinel =
+                            property == "font-family" && crate::safety::corrupted_style(value);
+                        if sentinel && crate::safety::safe_font_family(value) {
                             ir.warnings.push(Diagnostic::new(
-                                if sentinel {
-                                    DiagnosticKind::from(NoteKind::UndefinedundefinedStyle)
-                                } else {
-                                    DiagnosticKind::from(WarningKind::UnsafeStyle)
+                                NoteKind::UndefinedundefinedStyle,
+                                Details {
+                                    attribute: Some(property.to_owned()),
+                                    original: json!(value.trim()),
+                                    ir_field: Some("runs.font_family".into()),
+                                    reason: Some(
+                                        "检测到编辑器字体名包装；是否修复或移除由输出选项决定"
+                                            .into(),
+                                    ),
+                                    source_nodes: vec![id.as_str().unwrap_or_default().into()],
+                                    ..Default::default()
                                 },
+                            ));
+                            continue;
+                        }
+                        if !crate::safety::safe_css(value.trim()) {
+                            ir.warnings.push(Diagnostic::new(
+                                WarningKind::UnsafeStyle,
                                 Details {
                                     attribute: Some((property).to_owned()),
                                     original: serde_json::json!(value.trim()),
@@ -548,7 +601,8 @@ mod tests {
         let document = scraper::Html::parse_document("<div class='Article_Content'><custom-box><p>正文</p></custom-box><dl><dt>术语</dt><dd>说明</dd></dl>\
             <table><tbody><tr><td>单元格</td></tr></tbody></table></div>");
         let ir = crate::parser::parse(&document, ".Article_Content", false, None).unwrap();
-        for tag in ["custom-box", "dl", "dt", "dd"] {
+        {
+            let tag = "custom-box";
             let warning = ir
                 .warnings
                 .iter()
@@ -600,15 +654,43 @@ mod tests {
             "malformed-style",
         ] {
             let warning = ir.warnings.iter().find(|w| w["kind"] == kind).unwrap();
-            assert_eq!(warning["removed"], true);
+            if kind == "undefinedundefined-style" {
+                assert!(warning["removed"].is_null());
+            } else {
+                assert_eq!(warning["removed"], true);
+            }
             assert!(warning["original"].is_string());
             assert!(!warning["source_nodes"].as_array().unwrap().is_empty());
         }
         let html = crate::renderer::render(&ir);
-        assert!(!html.contains("undefinedundefined"));
+        assert!(html.contains("undefinedundefined"));
         assert!(!html.contains("url(bad)"));
         assert!(html.contains("正文"));
     }
+    #[test]
+    fn explanation_examples_distinguish_media_links_from_removed_elements() {
+        for (content, expected, absent) in [
+            (
+                "<iframe src='https://example.org/player'></iframe>",
+                "W0009",
+                "W0017",
+            ),
+            ("<object data='player.swf'></object>", "W0017", "W0009"),
+        ] {
+            let html = scraper::Html::parse_document(&format!(
+                "<div class='Article_Content'>{content}</div>"
+            ));
+            let ir = crate::parser::parse(&html, ".Article_Content", false, None).unwrap();
+            assert!(ir.warnings.iter().any(|item| item.kind.code() == expected));
+            assert!(!ir.warnings.iter().any(|item| item.kind.code() == absent));
+            if expected == "W0009" {
+                assert!(
+                    crate::renderer::render(&ir).contains("href=\"https://example.org/player\"")
+                );
+            }
+        }
+    }
+
     #[test]
     fn reports_unknowns_and_nested_unsupported_content() {
         let html = scraper::Html::parse_document("<div class='Article_Content'><p>&nbsp;&nbsp;内容<span style='mso-x:1;letter-spacing:2px' \

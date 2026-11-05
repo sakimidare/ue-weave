@@ -14,7 +14,16 @@ pub fn safe_url(value: &str, image: bool) -> bool {
 }
 
 pub fn safe_css(value: &str) -> bool {
-    if corrupted_style(value) || value.trim().is_empty() {
+    !corrupted_style(value) && css_syntax(value)
+}
+
+/// 字体名允许保留编辑器异常包装，仍按 CSS token 检查语法。
+pub fn safe_font_family(value: &str) -> bool {
+    css_syntax(value)
+}
+
+fn css_syntax(value: &str) -> bool {
+    if value.trim().is_empty() {
         return false;
     }
     let mut input = cssparser::ParserInput::new(value);
@@ -70,6 +79,39 @@ pub fn corrupted_style(value: &str) -> bool {
         })
 }
 
+pub fn repair_corrupted_font(value: &str) -> String {
+    value
+        .split(',')
+        .map(str::trim)
+        .map(|part| {
+            let (base, important) = crate::css::value_priority(part);
+            let lower = base.to_ascii_lowercase();
+            let mut cleaned = base.to_string();
+            for marker in ["undefinedundefined", "undefined"] {
+                if lower.starts_with(marker)
+                    && lower.ends_with(marker)
+                    && base.len() > marker.len() * 2
+                {
+                    cleaned = base[marker.len()..base.len() - marker.len()].to_string();
+                    break;
+                }
+            }
+            if cleaned.contains(char::is_whitespace)
+                && !cleaned.starts_with(['\'', '"'])
+                && !cleaned.ends_with(['\'', '"'])
+            {
+                cleaned = format!("\"{cleaned}\"");
+            }
+            if important {
+                format!("{cleaned} !important")
+            } else {
+                cleaned
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -91,5 +133,25 @@ mod tests {
         assert!(safe_css("\"url(\""));
         assert!(safe_css("rgb(255, 0, 0)"));
         assert!(!safe_css("u\\72l(\"https://example.org\")"));
+    }
+
+    #[test]
+    fn repairs_corrupted_font_wrappers() {
+        assert_eq!(
+            repair_corrupted_font("微软雅黑, undefinedundefinedmicrosoft yaheiundefinedundefined"),
+            "微软雅黑, \"microsoft yahei\""
+        );
+        assert_eq!(
+            repair_corrupted_font("MyUndefinedFont, serif"),
+            "MyUndefinedFont, serif"
+        );
+        assert_eq!(
+            repair_corrupted_font("undefinedMicrosoft YaHeiundefined !important"),
+            "\"Microsoft YaHei\" !important"
+        );
+        assert_eq!(
+            repair_corrupted_font("Arial, sans-serif"),
+            "Arial, sans-serif"
+        );
     }
 }

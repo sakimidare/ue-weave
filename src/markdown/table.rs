@@ -1,5 +1,5 @@
 //! 生成 GFM 表格，合并单元格和嵌套结构使用 HTML 表达。
-use super::{block_markdown, run_markdown};
+use super::{block_markdown, runs_markdown};
 use crate::model::{Block, TableCell};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -38,7 +38,7 @@ pub(crate) fn header(block: &Block) -> Option<Header> {
 fn cell(cell: &TableCell) -> String {
     let mut parts = Vec::new();
     if !cell.runs.is_empty() {
-        parts.push(cell.runs.iter().map(run_markdown).collect::<String>());
+        parts.push(runs_markdown(&cell.runs));
     }
     parts.extend(cell.blocks.iter().map(block_markdown));
     parts
@@ -62,7 +62,7 @@ pub(super) fn render(block: &Block) -> String {
     let separator = row(vec!["---".into(); columns]);
     let mut lines = Vec::new();
     if let Some(caption) = &block.caption {
-        lines.push(caption.iter().map(run_markdown).collect());
+        lines.push(runs_markdown(caption));
         lines.push(String::new());
     }
     if header == Header::Empty {
@@ -79,7 +79,6 @@ pub(super) fn render(block: &Block) -> String {
 }
 
 pub(super) fn html(block: &Block) -> String {
-    // 仅在结构标签之间插入排版空白，保留行内文字的间距。
     crate::renderer::block_html(block)
         .replace("<tr", "\n<tr")
         .replace("</tr>", "</tr>\n")

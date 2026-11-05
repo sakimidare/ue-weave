@@ -56,7 +56,11 @@ fn real_articles_preserve_text_order_and_asset_counts() {
         let document = Html::parse_document(source);
         let ir =
             crate::parser::parse(&document, ".Article_Content", false, Some(url.into())).unwrap();
-        let rendered = crate::renderer::render(&ir);
+        let prepared = crate::profile::prepare_documents(
+            &ir,
+            crate::profile::Profile::Conservative.settings(),
+        );
+        let rendered = crate::renderer::render(&prepared.ir);
         assert_eq!(
             ir.metadata["content_integrity"]["value"], "matched",
             "{url}"
@@ -80,7 +84,11 @@ fn real_articles_preserve_text_order_and_asset_counts() {
         }
         let restored: crate::model::Ir =
             serde_json::from_str(&serde_json::to_string(&ir).unwrap()).unwrap();
-        assert_eq!(crate::renderer::render(&restored), rendered);
+        let restored = crate::profile::prepare_documents(
+            &restored,
+            crate::profile::Profile::Conservative.settings(),
+        );
+        assert_eq!(crate::renderer::render(&restored.ir), rendered);
     }
 }
 

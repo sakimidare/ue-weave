@@ -20,7 +20,7 @@ pub fn charset(content_type: &str) -> Option<String> {
 
 impl Input {
     pub fn decode(bytes: Vec<u8>, source: String, declared: Option<String>) -> Self {
-        let prefix = String::from_utf8_lossy(&bytes[..bytes.len().min(4096)]);
+        let prefix = String::from_utf8_lossy(&bytes[..bytes.len().min(64 * 1024)]);
         let meta = Html::parse_document(&prefix);
         let label = declared.or_else(|| {
             meta.select(&Selector::parse("meta").unwrap())
@@ -101,5 +101,16 @@ mod tests {
         let input = Input::decode(vec![0xff, 0x41], "fixture".into(), Some("UTF-8".into()));
         assert_eq!(input.bytes, [0xff, 0x41]);
         assert_eq!(input.warnings[0]["kind"], "decode-replacement");
+    }
+
+    #[test]
+    fn finds_charset_after_the_legacy_four_kib_limit() {
+        let mut source = "<head>".to_string();
+        source.push_str(&" ".repeat(5000));
+        source.push_str("<meta charset='gbk'></head><p>中文</p>");
+        let (bytes, _, _) = encoding_rs::GBK.encode(&source);
+        let input = Input::decode(bytes.to_vec(), "fixture".into(), None);
+        assert_eq!(input.html, source);
+        assert!(input.warnings.is_empty());
     }
 }

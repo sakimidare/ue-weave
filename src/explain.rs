@@ -62,5 +62,20 @@ mod tests {
         for entry in entries {
             assert!(codes.contains(entry.split_whitespace().next().unwrap()));
         }
+        let mut indexed = BTreeSet::new();
+        for row in include_str!("../docs/diagnostics.md").lines() {
+            let cells: Vec<_> = row.split('|').map(str::trim).collect();
+            if cells.len() < 4 || !cells[1].starts_with(['E', 'W', 'N']) {
+                continue;
+            }
+            assert!(codes.contains(cells[1]), "索引含未定义编号：{}", cells[1]);
+            assert!(indexed.insert(cells[1]), "重复索引：{}", cells[1]);
+            assert_eq!(
+                lookup(cells[1]).unwrap().lines().next().unwrap(),
+                format!("{} {}", cells[1], cells[2]),
+                "索引标题与解释标题不一致"
+            );
+        }
+        assert_eq!(indexed, codes, "诊断索引缺少编号");
     }
 }

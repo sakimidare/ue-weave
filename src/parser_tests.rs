@@ -569,20 +569,20 @@ fn cleaned_block_text_matches_runs_and_code_has_diagnostics() {
     );
     let ir = parse(&document, ".Article_Content", false, None).unwrap();
     assert_eq!(ir.blocks[0].text, "甲\n乙");
-    assert_eq!(ir.blocks[1].text, "代码\n第二行");
+    assert_eq!(ir.blocks[1].text, "代码undefinedundefined\n第二行");
     assert_eq!(
         ir.warnings
             .iter()
             .filter(|w| w["kind"] == "undefinedundefined")
             .count(),
-        2
+        1
     );
     for output in [
         crate::renderer::render(&ir),
         crate::markdown::render(&ir),
         crate::typst::render(&ir),
     ] {
-        assert!(!output.contains("undefinedundefined"));
+        assert!(output.contains("代码undefinedundefined"));
         assert!(!output.contains("忽略"));
     }
     assert!(serde_json::to_string(&ir.original_nodes)

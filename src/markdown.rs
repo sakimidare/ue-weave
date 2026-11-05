@@ -63,7 +63,31 @@ fn run_markdown(run: &Run) -> String {
     {
         return crate::renderer::run_html(run);
     }
-    let mut text = escape_text(&run.text);
+    let mut text = match run.inline_kind {
+        Some(crate::model::InlineKind::Code) if !run.text.contains(['\n', '\r']) => {
+            let fence = "`".repeat(
+                run.text
+                    .split(|ch| ch != '`')
+                    .map(str::len)
+                    .max()
+                    .unwrap_or(0)
+                    + 1,
+            );
+            let pad = if run.text.starts_with('`')
+                || run.text.ends_with('`')
+                || (run.text.starts_with(' ')
+                    && run.text.ends_with(' ')
+                    && !run.text.chars().all(|ch| ch == ' '))
+            {
+                " "
+            } else {
+                ""
+            };
+            format!("{fence}{pad}{}{pad}{fence}", run.text)
+        }
+        Some(_) => return crate::renderer::run_html(run),
+        None => escape_text(&run.text),
+    };
     if let Some(href) = &run.link {
         if crate::safety::safe_url(href, false) {
             text = format!("[{text}]({})", destination(href));
@@ -90,9 +114,33 @@ fn run_markdown(run: &Run) -> String {
     text
 }
 
+fn runs_markdown(runs: &[Run]) -> String {
+    runs.iter()
+        .enumerate()
+        .map(|(index, run)| {
+            let adjacent_code = run.inline_kind == Some(crate::model::InlineKind::Code)
+                && [
+                    index.checked_sub(1).and_then(|i| runs.get(i)),
+                    runs.get(index + 1),
+                ]
+                .into_iter()
+                .flatten()
+                .any(|next| next.inline_kind == Some(crate::model::InlineKind::Code));
+            if adjacent_code {
+                crate::renderer::run_html(run)
+            } else {
+                run_markdown(run)
+            }
+        })
+        .collect()
+}
+
 fn block_markdown(block: &Block) -> String {
-    let content = block.runs.iter().map(run_markdown).collect::<String>();
+    let content = runs_markdown(&block.runs);
     match block.kind.as_str() {
+        "definition_list" | "definition_term" | "definition_description" => {
+            crate::renderer::block_html(block)
+        }
         "horizontal_rule" => "---".into(),
         "code_block" => {
             let fence = "`".repeat(
@@ -105,7 +153,12 @@ fn block_markdown(block: &Block) -> String {
                     .max(2)
                     + 1,
             );
-            format!("{fence}\n{}\n{fence}", block.text)
+            let language = block
+                .code_language
+                .as_deref()
+                .filter(|lang| crate::code::valid_language(lang))
+                .unwrap_or("");
+            format!("{fence}{language}\n{}\n{fence}", block.text)
         }
         "quote" => block
             .children
@@ -143,6 +196,34 @@ pub fn render_editable(ir: &Ir) -> String {
 }
 
 fn editable_block(block: &Block) -> String {
+    if block.kind == "definition_list" {
+        return block
+            .children
+            .iter()
+            .map(|child| {
+                let text = format!(
+                    "{}{}",
+                    runs_markdown(&child.runs),
+                    child
+                        .children
+                        .iter()
+                        .map(editable_block)
+                        .collect::<Vec<_>>()
+                        .join("\n\n")
+                );
+                match child.kind.as_str() {
+                    "definition_term" => format!("**{text}**"),
+                    "definition_description" => text
+                        .lines()
+                        .map(|line| format!("> {line}"))
+                        .collect::<Vec<_>>()
+                        .join("\n"),
+                    _ => editable_block(child),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n");
+    }
     if block.kind == "quote" {
         return block
             .children
@@ -185,7 +266,7 @@ fn editable_block(block: &Block) -> String {
                 };
                 let mut parts = Vec::new();
                 if !item.runs.is_empty() {
-                    parts.push(item.runs.iter().map(run_markdown).collect::<String>());
+                    parts.push(runs_markdown(&item.runs));
                 }
                 parts.extend(item.children.iter().map(editable_block));
                 let body = parts.join("\n\n");

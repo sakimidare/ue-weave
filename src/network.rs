@@ -1,6 +1,6 @@
 //! 页面和资源下载共用的 GET 请求与有限重试。
+use crate::network_policy::Client;
 use crate::{error::NetworkError, input, log::Logger};
-use reqwest::blocking::Client;
 use std::{error::Error, io::Read, time::Duration};
 
 /// 页面和单个资源共用的下载上限（64 MiB）。
@@ -55,7 +55,15 @@ fn classify(
         if let Some(error) = source.downcast_ref::<crate::network_policy::RoutingError>() {
             return match error {
                 crate::network_policy::RoutingError::Dns(_) => crate::error::NetworkKind::Dns,
-                _ => crate::error::NetworkKind::NetworkPolicy,
+                crate::network_policy::RoutingError::Restricted => {
+                    crate::error::NetworkKind::NetworkPolicy
+                }
+                crate::network_policy::RoutingError::InvalidAddress => {
+                    crate::error::NetworkKind::InvalidUrl
+                }
+                crate::network_policy::RoutingError::RedirectLimit => {
+                    crate::error::NetworkKind::RedirectLimit
+                }
             };
         }
         if source.is::<rustls::Error>() {
@@ -122,6 +130,63 @@ fn transient(error: &NetworkError) -> bool {
     }
 }
 
+/// 每次跳转重新选择请求头并检查目标地址。
+fn request(
+    client: &Client,
+    url: &url::Url,
+    policy: Policy,
+) -> Result<reqwest::blocking::Response, NetworkError> {
+    let mut current = url.clone();
+    let mut redirects = 0;
+    loop {
+        crate::network_policy::check_url(&current, policy.allow_private_network).map_err(
+            |error| {
+                failure(
+                    current.as_str(),
+                    error,
+                    crate::error::NetworkKind::NetworkPolicy,
+                )
+            },
+        )?;
+        let response = client.get(&current).send().map_err(|error| {
+            let kind = if error.is_connect() {
+                crate::error::NetworkKind::Connect
+            } else {
+                crate::error::NetworkKind::RequestFailed
+            };
+            failure(current.as_str(), error, kind)
+        })?;
+        if !matches!(response.status().as_u16(), 301 | 302 | 303 | 307 | 308) {
+            return Ok(response);
+        }
+        let Some(location) = response.headers().get(reqwest::header::LOCATION) else {
+            return Ok(response);
+        };
+        if redirects == 10 {
+            return Err(failure(
+                current.as_str(),
+                crate::network_policy::RoutingError::RedirectLimit,
+                crate::error::NetworkKind::NetworkPolicy,
+            ));
+        }
+        let location = location.to_str().map_err(|error| {
+            failure(
+                current.as_str(),
+                error,
+                crate::error::NetworkKind::InvalidUrl,
+            )
+        })?;
+        current = current.join(location).map_err(|error| {
+            failure(
+                current.as_str(),
+                error,
+                crate::error::NetworkKind::InvalidUrl,
+            )
+        })?;
+        redirects += 1;
+    }
+}
+
 pub fn fetch(
     client: &Client,
     url: &str,
@@ -139,14 +204,7 @@ pub fn fetch(
         logger.stage("request", format!("GET {url}，尝试 {attempt}/{attempts}"));
         let mut retry_after = None;
         let result = (|| {
-            let response = client.get(url).send().map_err(|error| {
-                let fallback = if error.is_connect() {
-                    crate::error::NetworkKind::Connect
-                } else {
-                    crate::error::NetworkKind::RequestFailed
-                };
-                failure(url, error, fallback)
-            })?;
+            let response = request(client, &parsed, policy)?;
             let resolved = response.url().to_string();
             let status = response.status();
             if !status.is_success() {

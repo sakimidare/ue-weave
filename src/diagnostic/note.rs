@@ -4,6 +4,10 @@ use thiserror::Error;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Error)]
 #[serde(rename_all = "kebab-case")]
 pub enum NoteKind {
+    #[error("已移除编辑器书签")]
+    EditorBookmark,
+    #[error("已还原代码块空格")]
+    CodeWhitespace,
     #[error("使用 --explain 查看编号解释")]
     ExplainHint,
     #[error("准备重试网络请求")]
@@ -54,7 +58,7 @@ pub enum NoteKind {
     TableStyle,
     #[error("已读取表格列宽")]
     ColumnWidth,
-    #[error("已清理异常字体声明")]
+    #[error("检测到异常字体声明")]
     UndefinedundefinedStyle,
     #[error("已展开段落间距")]
     ParagraphMarginShorthand,
@@ -68,6 +72,8 @@ pub enum NoteKind {
 impl NoteKind {
     pub fn code(self) -> &'static str {
         match self {
+            Self::EditorBookmark => "N0031",
+            Self::CodeWhitespace => "N0032",
             Self::ExplainHint => "N0030",
             Self::NetworkRetry => "N0028",
             Self::VerboseHint => "N0029",

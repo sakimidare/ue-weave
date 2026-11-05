@@ -8,6 +8,106 @@ use std::{
 };
 
 #[test]
+fn custom_headers_stay_on_the_input_origin() {
+    for redirect in [false, true] {
+        let source = TcpListener::bind("127.0.0.1:0").unwrap();
+        let target = TcpListener::bind("127.0.0.1:0").unwrap();
+        let url = format!("http://{}", source.local_addr().unwrap());
+        let target_url = format!("http://{}", target.local_addr().unwrap());
+        let serve_request = |listener: TcpListener, response: String| {
+            thread::spawn(move || {
+                listener.set_nonblocking(true).unwrap();
+                let deadline = Instant::now() + Duration::from_secs(5);
+                let mut stream = loop {
+                    if let Ok((stream, _)) = listener.accept() {
+                        break stream;
+                    }
+                    assert!(Instant::now() < deadline, "未收到请求");
+                    thread::sleep(Duration::from_millis(10));
+                };
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(2)))
+                    .unwrap();
+                let mut bytes = [0; 8192];
+                let length = stream.read(&mut bytes).unwrap();
+                stream.write_all(response.as_bytes()).unwrap();
+                String::from_utf8_lossy(&bytes[..length]).to_ascii_lowercase()
+            })
+        };
+        let body = format!("<div class='Article_Content'><img src='{target_url}/image.png'></div>");
+        let response = if redirect {
+            format!("HTTP/1.1 302 Found\r\nLocation: {target_url}/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+        } else {
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            )
+        };
+        let first = serve_request(source, response);
+        let body = "<div class='Article_Content'><p>正文</p></div>";
+        let second = serve_request(
+            target,
+            format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            ),
+        );
+        let directory = tempfile::tempdir().unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_ue-weave"))
+            .arg(&url)
+            .args([
+                "--allow-private-network",
+                "--download-images",
+                "--header",
+                "Cookie=review_secret",
+                "--header",
+                "Authorization=Bearer review_secret",
+                "--header",
+                "X-Api-Key=review_secret",
+                "--output",
+            ])
+            .arg(directory.path())
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let first = first.join().unwrap();
+        assert!(first.contains("cookie: review_secret"));
+        assert!(first.contains("authorization: bearer review_secret"));
+        assert!(first.contains("x-api-key: review_secret"));
+        let second = second.join().unwrap();
+        assert!(!second.contains("review_secret"), "{second}");
+    }
+}
+
+#[test]
+fn malformed_header_values_are_absent_from_diagnostics() {
+    for header in ["Cookie: review_secret", "review_secret invalid=value"] {
+        let directory = tempfile::tempdir().unwrap();
+        let output = Command::new(env!("CARGO_BIN_EXE_ue-weave"))
+            .args([
+                "https://example.org/",
+                "--header",
+                header,
+                "--json",
+                "--output",
+            ])
+            .arg(directory.path())
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        for bytes in [&output.stdout, &output.stderr] {
+            let text = String::from_utf8_lossy(bytes);
+            assert!(text.contains("E0014"));
+            assert!(!text.contains("review_secret"));
+        }
+    }
+}
+
+#[test]
 fn private_network_requires_explicit_option() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
@@ -246,4 +346,30 @@ fn headers_file_errors_use_dedicated_error_code() {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("E0003"));
     fs::remove_file(file).unwrap();
+}
+
+#[test]
+fn header_file_examples_match_explained_codes() {
+    let dir = tempfile::tempdir().unwrap();
+    for (name, content, code) in [
+        ("missing.json", None, "E0002"),
+        ("broken.json", Some("{"), "E0003"),
+        ("number.json", Some(r#"{"X-Test": 12}"#), "E0003"),
+        ("managed.json", Some(r#"{"Host": "example.org"}"#), "E0014"),
+    ] {
+        let file = dir.path().join(name);
+        if let Some(content) = content {
+            fs::write(&file, content).unwrap();
+        }
+        let output = Command::new(env!("CARGO_BIN_EXE_ue-weave"))
+            .args(["http://example.org/", "--headers-file"])
+            .arg(file)
+            .arg("--output")
+            .arg(dir.path().join("out"))
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains(code), "{name}: {stderr}");
+    }
 }

@@ -60,7 +60,6 @@ pub fn read(bytes: &[u8], path: &Path) -> Result<Ir> {
     crate::document::expand(&mut value["blocks"]);
     value["source"] = value["metadata"]["url"].clone();
     value["tool"] = serde_json::json!(Tool::default());
-    // 逐条读取节点，错误消息中保留对应的 JSON 字段路径。
     validate_blocks(
         value
             .get("blocks")
@@ -97,6 +96,9 @@ fn validate_blocks(value: &Value, path: &str, depth: usize) -> Result<()> {
             "quote",
             "code_block",
             "horizontal_rule",
+            "definition_list",
+            "definition_term",
+            "definition_description",
         ]
         .contains(&kind)
         {
@@ -113,6 +115,14 @@ fn validate_blocks(value: &Value, path: &str, depth: usize) -> Result<()> {
         }
         if let Some(runs) = value.get("runs") {
             validate_runs(runs, &format!("{path}.runs"))?;
+        }
+        if let Some(language) = value.get("code_language").filter(|v| !v.is_null()) {
+            if kind != "code_block" || !language.as_str().is_some_and(crate::code::valid_language) {
+                return Err(invalid(
+                    &format!("{path}.code_language"),
+                    "代码块语言需为不含空白的名称，例如 python、c++",
+                ));
+            }
         }
         if let Some(runs) = value.get("caption").filter(|v| !v.is_null()) {
             validate_runs(runs, &format!("{path}.caption"))?;
@@ -193,7 +203,6 @@ fn validate_runs(value: &Value, path: &str) -> Result<()> {
 
 fn normalize(blocks: &mut [Block]) {
     for block in blocks {
-        // 文字片段提供可编辑文本，代码块保留字面内容。
         if block.kind != "code_block" && !block.runs.is_empty() {
             block.text = block.runs.iter().map(|run| run.text.as_str()).collect();
         }

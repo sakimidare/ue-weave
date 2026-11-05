@@ -46,6 +46,38 @@ fn server(responses: Vec<(&'static str, Duration)>) -> (String, thread::JoinHand
 const OK: &str = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nOK";
 const FAIL: &str =
     "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+
+#[test]
+fn redirect_limit_has_its_own_code_and_is_not_retried() {
+    let redirect =
+        "HTTP/1.1 302 Found\r\nLocation: /loop\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+    let (url, server) = server(vec![(redirect, Duration::ZERO); 11]);
+    let client = crate::network_policy::client(
+        Duration::from_secs(2),
+        true,
+        reqwest::header::HeaderMap::new(),
+    )
+    .unwrap();
+    let error = network::fetch(&client, &url, policy(2), None, &Logger::new(false))
+        .err()
+        .unwrap();
+    assert_eq!(error.kind.code(), "E0111");
+    assert_eq!(error.attempts, 1);
+    assert_eq!(server.join().unwrap(), 11);
+}
+
+#[test]
+fn invalid_addresses_have_url_errors_even_when_private_network_is_allowed() {
+    for url in [
+        "ftp://example.org/file",
+        "http://user:password@example.org/",
+    ] {
+        let error = network::fetch(&client(), url, policy(2), None, &Logger::new(false))
+            .err()
+            .unwrap();
+        assert_eq!(error.kind.code(), "E0108", "{url}");
+    }
+}
 fn policy(retries: u8) -> Policy {
     Policy {
         allow_private_network: true,
@@ -53,12 +85,13 @@ fn policy(retries: u8) -> Policy {
         backoff: Duration::ZERO,
     }
 }
-fn client() -> Client {
+fn client() -> crate::network_policy::Client {
     Client::builder()
         .no_proxy()
         .timeout(Duration::from_secs(1))
         .build()
         .unwrap()
+        .into()
 }
 
 #[test]
@@ -122,9 +155,15 @@ fn timeout_and_tls_report_underlying_causes() {
         .timeout(Duration::from_millis(50))
         .build()
         .unwrap();
-    let error = network::fetch(&timeout_client, &url, policy(0), None, &Logger::new(false))
-        .err()
-        .unwrap();
+    let error = network::fetch(
+        &timeout_client.into(),
+        &url,
+        policy(0),
+        None,
+        &Logger::new(false),
+    )
+    .err()
+    .unwrap();
     assert_eq!(error.kind, crate::error::NetworkKind::Timeout);
     assert!(error.detail.contains("timed out"));
     server.join().unwrap();

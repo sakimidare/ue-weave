@@ -116,7 +116,11 @@ fn run_typst(run: &Run) -> String {
             None => image,
         };
     }
-    let mut text = escape(&run.text);
+    let mut text = match run.inline_kind {
+        Some(crate::model::InlineKind::Variable) => format!("#emph[{}]", escape(&run.text)),
+        Some(_) => format!("#raw({})", quoted(&run.text)),
+        None => escape(&run.text),
+    };
     if let Some(href) = &run.link {
         if crate::safety::safe_url(href, false) {
             text = format!("#link({})[{text}]", quoted(href));
@@ -177,7 +181,7 @@ fn image_dimension(value: &str) -> Option<String> {
 
 fn font_families(value: &str) -> Vec<String> {
     // 与 HTML 导出一致：被过滤的声明保存在来源记录中。
-    if !crate::safety::safe_css(value) {
+    if !crate::safety::safe_font_family(value) {
         return Vec::new();
     }
     let mut families = Vec::new();
@@ -220,8 +224,38 @@ fn font_families(value: &str) -> Vec<String> {
 fn block_typst(block: &Block) -> String {
     let content = block.runs.iter().map(run_typst).collect::<String>();
     match block.kind.as_str() {
+        "definition_list" => block
+            .children
+            .iter()
+            .map(block_typst)
+            .collect::<Vec<_>>()
+            .join("\n\n"),
+        "definition_term" | "definition_description" => {
+            let text = format!(
+                "{content}{}",
+                block
+                    .children
+                    .iter()
+                    .map(block_typst)
+                    .collect::<Vec<_>>()
+                    .join("\n\n")
+            );
+            if block.kind == "definition_term" {
+                format!("#strong[{text}]")
+            } else {
+                format!("#pad(left: 1em)[{text}]")
+            }
+        }
         "horizontal_rule" => "#line(length: 100%)".into(),
-        "code_block" => format!("#raw({}, block: true)", quoted(&block.text)),
+        "code_block" => {
+            let language = block
+                .code_language
+                .as_deref()
+                .filter(|lang| crate::code::valid_language(lang))
+                .map(|lang| format!(", lang: {}", quoted(lang)))
+                .unwrap_or_default();
+            format!("#raw({}, block: true{language})", quoted(&block.text))
+        }
         "quote" => format!(
             "#quote(block: true)[{}]",
             block
@@ -326,7 +360,23 @@ fn block_typst(block: &Block) -> String {
                     .join(", ")
             )
         }
-        "table" => table_typst(block),
+        "table" => {
+            let table = table_typst(block);
+            let left = block
+                .table_styles
+                .get("margin-left")
+                .and_then(|v| v.value.as_str());
+            let right = block
+                .table_styles
+                .get("margin-right")
+                .and_then(|v| v.value.as_str());
+            match (left, right) {
+                (Some("auto"), Some("auto")) => format!("#align(center)[{table}]"),
+                (Some("auto"), _) => format!("#align(right)[{table}]"),
+                (_, Some("auto")) => format!("#align(left)[{table}]"),
+                _ => table,
+            }
+        }
         _ => paragraph_typst(block, content),
     }
 }
@@ -588,7 +638,7 @@ mod tests {
     }
 
     #[test]
-    fn corrupted_font_declarations_stay_in_snapshot_only() {
+    fn default_profile_repairs_corrupted_fonts_and_keeps_the_snapshot() {
         let document = scraper::Html::parse_document(include_str!("../fixtures/seu-585911.html"));
         let ir = crate::parser::parse(&document, ".Article_Content", false, None).unwrap();
         assert!(ir
@@ -598,10 +648,14 @@ mod tests {
         assert!(serde_json::to_string(&ir.original_nodes)
             .unwrap()
             .contains("undefinedundefined"));
-        assert!(!super::render(&ir)
+        let prepared = crate::profile::prepare_documents(
+            &ir,
+            crate::profile::Profile::Conservative.settings(),
+        );
+        assert!(!super::render(&prepared.ir)
             .to_lowercase()
             .contains("undefinedundefined"));
-        assert!(!crate::renderer::render(&ir)
+        assert!(!crate::renderer::render(&prepared.ir)
             .to_lowercase()
             .contains("undefinedundefined"));
     }
@@ -614,10 +668,14 @@ mod tests {
         ] {
             let document = scraper::Html::parse_document(source);
             let ir = crate::parser::parse(&document, ".Article_Content", false, None).unwrap();
+            let prepared = crate::profile::prepare_documents(
+                &ir,
+                crate::profile::Profile::Conservative.settings(),
+            );
             for output in [
-                super::render(&ir),
-                crate::renderer::render(&ir),
-                crate::markdown::render(&ir),
+                super::render(&prepared.ir),
+                crate::renderer::render(&prepared.ir),
+                crate::markdown::render(&prepared.ir),
             ] {
                 assert!(!output.to_ascii_lowercase().contains("undefinedmicrosoft"));
             }

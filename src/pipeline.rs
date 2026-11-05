@@ -1,4 +1,5 @@
 //! 单篇文章的读取、解析、资源处理、导出和结果汇报。
+use crate::network_policy::Client;
 use crate::{
     cli::Args,
     diagnostic::Diagnostic,
@@ -9,9 +10,7 @@ use crate::{
     model::Ir,
     network, network_policy, parser, profile, regenerate, site, site_config,
 };
-use reqwest::blocking::Client;
 use reqwest::header::HeaderMap;
-use scraper::Html;
 use std::{fs, path::Path, time::Duration};
 
 struct Network {
@@ -22,7 +21,7 @@ struct Network {
 impl Network {
     fn new(args: &Args) -> Result<Self> {
         let headers = load_headers(args)?;
-        let client = network_policy::client(
+        let mut client = network_policy::client(
             Duration::from_secs(args.timeout),
             args.allow_private_network,
             headers,
@@ -31,6 +30,7 @@ impl Network {
             url: args.url.clone().unwrap_or_default(),
             source,
         })?;
+        client.set_origin(args.url.as_deref());
         Ok(Self {
             client,
             policy: network::Policy {
@@ -44,23 +44,33 @@ impl Network {
 
 fn load_headers(args: &Args) -> Result<HeaderMap> {
     let mut values = Vec::new();
-    for raw in &args.header {
-        let (name, value) = raw
-            .split_once('=')
-            .ok_or_else(|| RecoverError::Header(format!("格式应为 NAME=VALUE：{raw}")))?;
-        values.push((name.trim().to_owned(), value.to_owned()));
-    }
     if let Some(path) = &args.headers_file {
         let text = fs::read_to_string(path).map_err(|source| RecoverError::ReadConfig {
             path: path.clone(),
             source,
         })?;
-        let file: std::collections::BTreeMap<String, String> = serde_json::from_str(&text)
-            .map_err(|source| RecoverError::Config {
+        let value: serde_json::Value =
+            serde_json::from_str(&text).map_err(|source| RecoverError::Config {
                 path: path.clone(),
                 reason: source.to_string(),
             })?;
-        values.extend(file);
+        let object = value.as_object().ok_or_else(|| RecoverError::Config {
+            path: path.clone(),
+            reason: "header 文件必须是 JSON 对象".into(),
+        })?;
+        for (name, value) in object {
+            let value = value.as_str().ok_or_else(|| RecoverError::Config {
+                path: path.clone(),
+                reason: format!("字段 {name} 的值必须是字符串"),
+            })?;
+            values.push((name.clone(), value.to_owned()));
+        }
+    }
+    for (index, raw) in args.header.iter().enumerate() {
+        let (name, value) = raw.split_once('=').ok_or_else(|| {
+            RecoverError::Header(format!("第 {} 个 --header 格式应为 NAME=VALUE", index + 1))
+        })?;
+        values.push((name.trim().to_owned(), value.to_owned()));
     }
     network_policy::headers(&values).map_err(RecoverError::Header)
 }
@@ -133,7 +143,7 @@ fn parse(input: input::Input, args: &Args, logger: &Logger) -> Result<Parsed> {
             input.source
         ),
     );
-    let document = Html::parse_document(&input.html);
+    let document = crate::html::parse(&input.html);
     let requested_selector = settings
         .apply_overrides(&args.selector)?
         .unwrap_or_else(|| "auto".into());

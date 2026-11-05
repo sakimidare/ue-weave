@@ -44,7 +44,7 @@ pub(crate) struct Args {
     /// 单次请求超时秒数，1–120。
     #[arg(long, default_value_t = 30, value_parser = clap::value_parser!(u64).range(1..=120), value_name = "SECONDS", help_heading = "资源与网络")]
     pub(crate) timeout: u64,
-    /// 允许请求私网、回环和保留网段。
+    /// 允许请求校内网或本地地址。
     #[arg(long, help_heading = "资源与网络")]
     pub(crate) allow_private_network: bool,
     /// 为网页和资源请求添加 HTTP header，可重复，例如 `--header Referer=https://example.edu/`。

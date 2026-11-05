@@ -52,6 +52,10 @@ pub(crate) fn run_html(run: &Run) -> String {
         return image;
     }
     let mut value = html_escape::encode_text(&run.text).to_string();
+    if let Some(kind) = run.inline_kind {
+        let tag = kind.tag();
+        value = format!("<{tag}>{value}</{tag}>");
+    }
     if let Some(align) = &run.vertical_align {
         if align == "super" {
             value = format!("<sup>{value}</sup>");
@@ -110,10 +114,28 @@ pub(crate) fn run_html(run: &Run) -> String {
 
 pub(crate) fn block_html(block: &Block) -> String {
     match block.kind.as_str() {
+        "definition_list" | "definition_term" | "definition_description" => {
+            let tag = match block.kind.as_str() {
+                "definition_list" => "dl",
+                "definition_term" => "dt",
+                _ => "dd",
+            };
+            return format!(
+                "<{tag}>{}{}</{tag}>",
+                block.runs.iter().map(run_html).collect::<String>(),
+                block.children.iter().map(block_html).collect::<String>()
+            );
+        }
         "horizontal_rule" => return "<hr>".into(),
         "code_block" => {
             return format!(
-                "<pre><code>{}</code></pre>",
+                "<pre><code{}>{}</code></pre>",
+                block
+                    .code_language
+                    .as_deref()
+                    .filter(|lang| crate::code::valid_language(lang))
+                    .map(|lang| format!(" class=\"language-{lang}\""))
+                    .unwrap_or_default(),
                 html_escape::encode_text(&block.text)
             )
         }
@@ -324,6 +346,7 @@ mod tests {
     fn renders_semantic_marks_and_inferred_indent() {
         let ir = Ir {
             blocks: vec![Block {
+                code_language: None,
                 row_groups: Vec::new(),
                 column_groups: Vec::new(),
                 table_styles: Default::default(),
@@ -345,6 +368,7 @@ mod tests {
                 },
                 align: "center".into(),
                 runs: vec![Run {
+                    inline_kind: None,
                     source_nodes: Vec::new(),
                     line_break: false,
                     text: "标题".into(),

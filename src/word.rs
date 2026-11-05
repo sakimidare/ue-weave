@@ -1,4 +1,4 @@
-//! 参考 UEditor filterword.js 转换保留下来的 Office 声明。
+//! 参考 UEditor filterword.js 转换 Office 声明。
 pub fn paragraph_structure(
     element: scraper::ElementRef,
     source: &str,

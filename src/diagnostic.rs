@@ -106,7 +106,7 @@ mod tests {
     }
     #[test]
     fn diagnostic_codes_are_unique_and_unknown_kinds_fail() {
-        let kinds: [DiagnosticKind; 48] = [
+        let kinds: [DiagnosticKind; 51] = [
             WarningKind::UnknownEncoding.into(),
             WarningKind::DecodeReplacement.into(),
             WarningKind::ContentIntegrityMismatch.into(),
@@ -141,6 +141,7 @@ mod tests {
             NoteKind::Whitespace.into(),
             WarningKind::ExcludedElement.into(),
             WarningKind::CustomListMarker.into(),
+            WarningKind::NestingLimit.into(),
             NoteKind::UeOrWordAttribute.into(),
             NoteKind::CssCommentNormalization.into(),
             NoteKind::CssPriority.into(),
@@ -155,21 +156,33 @@ mod tests {
             NoteKind::NetworkRetry.into(),
             NoteKind::VerboseHint.into(),
             NoteKind::ExplainHint.into(),
+            NoteKind::EditorBookmark.into(),
+            NoteKind::CodeWhitespace.into(),
         ];
         let codes: std::collections::BTreeSet<_> = kinds.iter().map(|kind| kind.code()).collect();
         assert_eq!(codes.len(), kinds.len());
         for (level, prefix) in [("warning", 'W'), ("note", 'N')] {
-            let actual: Vec<_> = kinds
+            let mut actual: Vec<_> = kinds
                 .iter()
                 .filter(|kind| kind.level() == level)
                 .map(|kind| kind.code())
                 .collect();
+            actual.sort_unstable();
             let expected: Vec<_> = (1..=actual.len())
                 .map(|number| format!("{prefix}{number:04}"))
                 .collect();
             assert_eq!(actual, expected);
         }
         for kind in kinds {
+            assert_eq!(
+                crate::explain::lookup(kind.code())
+                    .unwrap()
+                    .lines()
+                    .next()
+                    .unwrap(),
+                format!("{} {}", kind.code(), kind),
+                "解释标题与日志标题不一致"
+            );
             let warning = Diagnostic::new(
                 kind,
                 crate::diagnostic::Details {
