@@ -7,12 +7,25 @@ mod layout;
 mod output_context;
 mod render;
 
-#[derive(Clone, Copy, Default, clap::ValueEnum)]
+#[derive(Clone, Copy, Debug, Default, clap::ValueEnum)]
 pub enum Color {
     #[default]
     Auto,
     Always,
     Never,
+}
+
+impl std::str::FromStr for Color {
+    type Err = ();
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "auto" => Ok(Self::Auto),
+            "always" => Ok(Self::Always),
+            "never" => Ok(Self::Never),
+            _ => Err(()),
+        }
+    }
 }
 
 impl Color {

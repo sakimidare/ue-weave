@@ -98,12 +98,13 @@ pub fn main() {
             ) {
                 error.exit();
             }
-            let partial = command().ignore_errors(true).get_matches_from(&argv);
-            let json = partial.get_flag("json");
-            let color = partial
-                .get_one::<log::Color>("color")
-                .copied()
-                .unwrap_or_default();
+            // Do not parse the arguments a second time with
+            // `ignore_errors(true)`.  An invalid enum/value can leave
+            // ArgMatches incomplete; querying it with `get_flag` or
+            // `get_one` may panic inside clap.  These two options only affect
+            // error presentation, so inspect their raw argv spelling instead.
+            let json = raw_bool_flag(&argv, "json");
+            let color = raw_color_option(&argv).unwrap_or_default();
             let message = error.to_string();
             let error =
                 RecoverError::Arguments(message.trim_start_matches("error: ").trim().into());
@@ -115,6 +116,38 @@ pub fn main() {
         report_error(&error, args.json, args.verbose, args.color);
         std::process::exit(1);
     }
+}
+
+fn raw_bool_flag(argv: &[std::ffi::OsString], name: &str) -> bool {
+    let long = format!("--{name}");
+    for arg in argv.iter().skip(1) {
+        let Some(value) = arg.to_str() else {
+            continue;
+        };
+        if value == "--" {
+            break;
+        }
+        if value == long {
+            return true;
+        }
+    }
+    false
+}
+
+fn raw_color_option(argv: &[std::ffi::OsString]) -> Option<log::Color> {
+    let mut args = argv.iter().skip(1);
+    while let Some(arg) = args.next() {
+        if arg.to_str() == Some("--") {
+            break;
+        }
+        if let Some(value) = arg.to_str().and_then(|arg| arg.strip_prefix("--color=")) {
+            return value.parse().ok();
+        }
+        if arg == "--color" {
+            return args.next().and_then(|value| value.to_str()?.parse().ok());
+        }
+    }
+    None
 }
 
 fn command() -> clap::Command {

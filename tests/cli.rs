@@ -210,6 +210,56 @@ fn color_policy_keeps_json_plain_and_formats_errors() {
 }
 
 #[test]
+fn invalid_profile_reports_clap_error_without_panicking() {
+    for args in [
+        vec!["--profile", "typo", "--output", "/tmp/ue-profile-invalid"],
+        vec![
+            "--profile",
+            "typo",
+            "--json",
+            "--output",
+            "/tmp/ue-profile-invalid-json",
+        ],
+    ] {
+        let output = common::command().args(args).output().unwrap();
+        assert_eq!(output.status.code(), Some(2), "stderr: {:?}", output);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("invalid value") || stderr.contains("possible values"));
+        assert!(!stderr.contains("panicked at"));
+        assert!(!stderr.contains("ArgAction"));
+        if output.stdout.is_empty() {
+            continue;
+        }
+        let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(result["status"], "error");
+    }
+}
+
+#[test]
+fn malformed_presentation_options_report_errors_without_panicking() {
+    for args in [
+        vec!["--color", "typo", "--output", "/tmp/ue-color-invalid"],
+        vec!["--color", "--output", "/tmp/ue-color-missing"],
+        vec![
+            "--profile",
+            "typo",
+            "--color",
+            "always",
+            "--json",
+            "--output",
+            "/tmp/ue-profile-invalid-colored",
+        ],
+    ] {
+        let output = common::command().args(args).output().unwrap();
+        assert_eq!(output.status.code(), Some(2), "stderr: {:?}", output);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(!stderr.contains("panicked at"));
+        assert!(!stderr.contains("ArgAction"));
+        assert!(stderr.contains("error[E0001]:"));
+    }
+}
+
+#[test]
 fn numbered_diagnostics_match_terminal_and_json() {
     let invalid = common::command()
         .args(["--json", "--unknown-option"])
