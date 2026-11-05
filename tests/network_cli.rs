@@ -161,3 +161,89 @@ fn exhausted_retries_produce_structured_error() {
     assert_eq!(error["network"]["url"], format!("{url}/"));
     assert!(!dir.join("reconstructed.html").exists());
 }
+
+#[test]
+fn custom_headers_are_sent_to_the_page_request() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("http://{}", listener.local_addr().unwrap());
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = String::new();
+        let mut buffer = [0u8; 4096];
+        let size = stream.read(&mut buffer).unwrap();
+        request.push_str(&String::from_utf8_lossy(&buffer[..size]));
+        assert!(
+            request
+                .to_ascii_lowercase()
+                .contains("referer: https://example.edu/"),
+            "{request}"
+        );
+        assert!(request.contains("x-test: accepted"), "{request}");
+        let body = "<div class='body'><p>正文</p></div>";
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        )
+        .unwrap();
+    });
+    let dir = std::env::temp_dir().join(format!("ue-http-header-{}", std::process::id()));
+    let output = Command::new(env!("CARGO_BIN_EXE_ue-weave"))
+        .arg(&url)
+        .args([
+            "--allow-private-network",
+            "--header",
+            "Referer=https://example.edu/",
+        ])
+        .args([
+            "--header",
+            "X-Test=accepted",
+            "--selector",
+            ".body",
+            "--output",
+        ])
+        .arg(&dir)
+        .env("NO_PROXY", "127.0.0.1")
+        .env("no_proxy", "127.0.0.1")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    server.join().unwrap();
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn invalid_header_configuration_has_dedicated_error_code() {
+    let output = Command::new(env!("CARGO_BIN_EXE_ue-weave"))
+        .args([
+            "http://example.org/",
+            "--header",
+            "Host=bad",
+            "--output",
+            "/tmp/ue-invalid-header",
+        ])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("E0014"), "{stderr}");
+}
+
+#[test]
+fn headers_file_errors_use_dedicated_error_code() {
+    let file = std::env::temp_dir().join(format!("ue-invalid-headers-{}.json", std::process::id()));
+    fs::write(&file, "[]").unwrap();
+    let output = Command::new(env!("CARGO_BIN_EXE_ue-weave"))
+        .args(["http://example.org/", "--headers-file"])
+        .arg(&file)
+        .args(["--output", "/tmp/ue-invalid-headers-file"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("E0003"));
+    fs::remove_file(file).unwrap();
+}

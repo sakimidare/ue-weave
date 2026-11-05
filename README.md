@@ -67,6 +67,31 @@ ue-weave 'https://jwc.seu.edu.cn/2026/0915/c21679a583204/page.htm' \
 
 默认保留远程资源链接。网页中的相对链接会转为完整网址；本地 HTML 中的路径保持原样。
 
+部分学校会要求特定的 HTTP header。可重复使用 `--header NAME=VALUE`；页面、图片和附件请求共用这些 header：
+
+```sh
+ue-weave 'https://example.edu/article.htm' \
+  --header 'Referer=https://example.edu/' \
+  --header 'X-Requested-With=XMLHttpRequest' \
+  --output output/
+```
+
+也可以从 JSON 对象文件读取：
+
+```json
+{
+  "Referer": "https://example.edu/",
+  "X-Requested-With": "XMLHttpRequest"
+}
+```
+
+```sh
+ue-weave 'https://example.edu/article.htm' \
+  --headers-file headers.json --output output/
+```
+
+不要设置 `Host`、`Content-Length`、`Connection` 或 `Transfer-Encoding`。header 值不会写入报告；敏感 Cookie 不建议直接放在 shell 历史中。
+
 ## 显示标题、日期和作者
 
 加上 `--include-metadata`，将网页中找到的标题、日期、作者等信息放到正文上方：

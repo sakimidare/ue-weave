@@ -76,11 +76,24 @@ ue-weave --input page.html --output output/ \
 | `--download-attachments` | 下载附件并替换为本地链接 |
 | `--asset-root <DIR>` | 从 JSON 导出时，指定图片和附件所在目录，包含 images/ 和 attachments/ |
 | `--allow-private-network` | 允许网页与资源请求访问私网、回环和保留网段 |
+| `--header <NAME=VALUE>` | 添加网页与资源请求的 HTTP header，可重复 |
+| `--headers-file <FILE>` | 从 JSON 对象读取 HTTP header |
 | `--include-metadata` | 在导出文档顶部显示文章元数据 |
 | `--no-inference` | 关闭启发式推断 |
 | `--json` | 以 JSON 输出运行结果摘要 |
 | `--verbose` | 输出详细阶段日志 |
 | `--color <MODE>` | 日志颜色：auto 自动（默认）、always 始终、never 关闭 |
+
+header 文件格式为 JSON 对象，例如：
+
+```json
+{
+  "Referer": "https://example.edu/",
+  "X-Requested-With": "XMLHttpRequest"
+}
+```
+
+命令行 header 与文件中的 header 合并；同名 header 后出现的值覆盖前面的值。不要设置 `Host`、`Content-Length`、`Connection` 或 `Transfer-Encoding`。header 值不会写入报告。
 
 ## 站点选择器配置
 

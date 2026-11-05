@@ -299,7 +299,12 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("ue-office-name-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let record = fetch_attachment(
-            &crate::network_policy::client(Duration::from_secs(2), true).unwrap(),
+            &crate::network_policy::client(
+                Duration::from_secs(2),
+                true,
+                reqwest::header::HeaderMap::new(),
+            )
+            .unwrap(),
             AssetRequest {
                 url: &url,
                 directory: &dir,

@@ -28,6 +28,8 @@ pub enum RecoverError {
     },
     #[error("输入参数错误：{0}")]
     Arguments(String),
+    #[error("HTTP header 配置错误：{0}")]
+    Header(String),
     #[error("读取本地 HTML 文件失败：{path}: {source}")]
     ReadInput {
         path: PathBuf,
@@ -110,6 +112,7 @@ impl RecoverError {
             Self::ReadConfig { .. } => "E0002",
             Self::Config { .. } => "E0003",
             Self::Arguments(_) => "E0001",
+            Self::Header(_) => "E0014",
             Self::ReadIr { .. } => "E0012",
             Self::InvalidIr { .. } => "E0004",
             Self::ReadInput { .. } => "E0005",
@@ -254,6 +257,7 @@ mod tests {
     fn distinct_error_categories_have_unique_explained_codes() {
         let errors = [
             RecoverError::Arguments(String::new()),
+            RecoverError::Header(String::new()),
             RecoverError::ReadConfig {
                 path: PathBuf::new(),
                 source: io::Error::other("读取失败"),

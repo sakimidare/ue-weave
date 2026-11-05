@@ -10,6 +10,7 @@ use crate::{
     network, network_policy, parser, profile, regenerate, site, site_config,
 };
 use reqwest::blocking::Client;
+use reqwest::header::HeaderMap;
 use scraper::Html;
 use std::{fs, path::Path, time::Duration};
 
@@ -20,9 +21,11 @@ struct Network {
 
 impl Network {
     fn new(args: &Args) -> Result<Self> {
+        let headers = load_headers(args)?;
         let client = network_policy::client(
             Duration::from_secs(args.timeout),
             args.allow_private_network,
+            headers,
         )
         .map_err(|source| RecoverError::Request {
             url: args.url.clone().unwrap_or_default(),
@@ -37,6 +40,29 @@ impl Network {
             },
         })
     }
+}
+
+fn load_headers(args: &Args) -> Result<HeaderMap> {
+    let mut values = Vec::new();
+    for raw in &args.header {
+        let (name, value) = raw
+            .split_once('=')
+            .ok_or_else(|| RecoverError::Header(format!("格式应为 NAME=VALUE：{raw}")))?;
+        values.push((name.trim().to_owned(), value.to_owned()));
+    }
+    if let Some(path) = &args.headers_file {
+        let text = fs::read_to_string(path).map_err(|source| RecoverError::ReadConfig {
+            path: path.clone(),
+            source,
+        })?;
+        let file: std::collections::BTreeMap<String, String> = serde_json::from_str(&text)
+            .map_err(|source| RecoverError::Config {
+                path: path.clone(),
+                reason: source.to_string(),
+            })?;
+        values.extend(file);
+    }
+    network_policy::headers(&values).map_err(RecoverError::Header)
 }
 
 enum Source<'a> {

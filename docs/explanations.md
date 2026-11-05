@@ -106,6 +106,14 @@
 
 处理：检查消息中的具体原因和系统网络配置；提交问题时附上完整错误消息。
 
+## E0014 HTTP header 配置错误
+
+命令行或 JSON header 配置无法解析，或尝试覆盖由 HTTP 客户端管理的 header。
+
+例子：`ue-weave URL --header 'Referer'` 缺少 `=VALUE`，或使用 `--header 'Host=internal'`。
+
+处理：使用 `--header 'NAME=VALUE'`，或使用 JSON 对象文件；不要设置 `Host`、`Content-Length`、`Connection` 和 `Transfer-Encoding`。
+
 ## E0101 请求超时
 
 网页或资源在设定时间内没有完成响应。

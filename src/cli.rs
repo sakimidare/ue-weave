@@ -47,6 +47,12 @@ pub(crate) struct Args {
     /// 允许请求私网、回环和保留网段。
     #[arg(long, help_heading = "资源与网络")]
     pub(crate) allow_private_network: bool,
+    /// 为网页和资源请求添加 HTTP header，可重复，例如 `--header Referer=https://example.edu/`。
+    #[arg(long, value_name = "NAME=VALUE", help_heading = "资源与网络")]
+    pub(crate) header: Vec<String>,
+    /// 从 JSON 对象文件读取 HTTP header，例如 `{ "Referer": "https://example.edu/" }`。
+    #[arg(long, value_name = "FILE", help_heading = "资源与网络")]
+    pub(crate) headers_file: Option<PathBuf>,
     /// 输出目录，自动创建；覆盖同名文档。
     #[arg(
         short,

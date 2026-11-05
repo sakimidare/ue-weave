@@ -131,7 +131,12 @@ fn timeout_and_tls_report_underlying_causes() {
 
     let (url, server) = self::server(vec![(OK, Duration::ZERO)]);
     let error = network::fetch(
-        &crate::network_policy::client(Duration::from_secs(5), true).unwrap(),
+        &crate::network_policy::client(
+            Duration::from_secs(5),
+            true,
+            reqwest::header::HeaderMap::new(),
+        )
+        .unwrap(),
         &url.replace("http:", "https:"),
         policy(2),
         None,

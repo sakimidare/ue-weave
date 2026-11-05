@@ -2,6 +2,7 @@
 use reqwest::{
     blocking::Client,
     dns::{Addrs, Name, Resolve, Resolving},
+    header::HeaderMap,
 };
 use std::{
     io,
@@ -106,14 +107,37 @@ impl Resolve for CheckedResolver {
     }
 }
 
-pub fn client(timeout: Duration, allow_private: bool) -> Result<Client, reqwest::Error> {
+pub fn client(
+    timeout: Duration,
+    allow_private: bool,
+    headers: HeaderMap,
+) -> Result<Client, reqwest::Error> {
     let builder = Client::builder()
         .no_proxy()
         .timeout(timeout)
         .user_agent(concat!("ue-weave/", env!("CARGO_PKG_VERSION")))
+        .default_headers(headers)
         .redirect(redirect_policy(allow_private))
         .dns_resolver(Arc::new(CheckedResolver { allow_private }));
     builder.build()
+}
+
+pub fn headers(values: &[(String, String)]) -> Result<HeaderMap, String> {
+    let mut map = HeaderMap::new();
+    for (name, value) in values {
+        let name = reqwest::header::HeaderName::from_bytes(name.as_bytes())
+            .map_err(|_| format!("HTTP header 名称无效：{name}"))?;
+        let value = reqwest::header::HeaderValue::from_str(value)
+            .map_err(|_| format!("HTTP header 值无效：{name}"))?;
+        if matches!(
+            name.as_str(),
+            "host" | "content-length" | "connection" | "transfer-encoding"
+        ) {
+            return Err(format!("不允许覆盖受管理的 header：{name}"));
+        }
+        map.insert(name, value);
+    }
+    Ok(map)
 }
 
 fn redirect_policy(allow_private: bool) -> reqwest::redirect::Policy {
@@ -131,6 +155,19 @@ fn redirect_policy(allow_private: bool) -> reqwest::redirect::Policy {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn validates_custom_headers_and_rejects_managed_names() {
+        let map = headers(&[("Referer".into(), "https://example.edu/".into())]).unwrap();
+        assert_eq!(map.get("referer").unwrap(), "https://example.edu/");
+        for value in [
+            vec![("bad name".into(), "x".into())],
+            vec![("Host".into(), "example.edu".into())],
+            vec![("X-Test".into(), "bad\nvalue".into())],
+        ] {
+            assert!(headers(&value).is_err());
+        }
+    }
     #[test]
     fn redirect_to_loopback_stops_before_second_request() {
         use std::io::{Read, Write};
