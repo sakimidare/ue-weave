@@ -10,7 +10,7 @@
 
 `main.rs` 调用命令入口；`cli.rs` 管理 clap 参数和退出状态；`pipeline.rs` 依次读取输入、解析正文、处理资源、生成文件和汇报结果。URL 输入与本地文件通过 `Source` 枚举区分。一次处理按需创建一个网络客户端，网页与资源下载共用客户端及重试设置。
 
-错误路径不对不完整的 clap `ArgMatches` 做二次读取；颜色和 JSON 输出选项从原始参数中按 `--` 分隔符及选项值边界安全提取。解析在遇到错误参数时停止；需要指定错误输出方式时，将 `--json`、`--color` 放在可能出错的参数前。
+错误路径从原始参数读取颜色和 JSON 输出选项。解析在遇到错误参数时停止。
 
 ## 文章 JSON 与解析记录
 
@@ -38,7 +38,7 @@ UEditor 的保存结果是 HTML。结构还原以这份 HTML 中的内容为依�
 
 ### 资源下载
 
-默认请求公网地址。初始 URL、重定向目标和 DNS 返回的实际连接地址均参与校验；内部网站使用 `--allow-private-network`。请求直接连接目标，系统代理环境变量保持独立于此下载流程。可使用重复的 `--header NAME=VALUE` 或 `--headers-file` 为网页、图片和附件请求提供站点要求的 header；header 值不写入报告，受客户端管理的连接级 header 会被拒绝。
+使用 `--allow-private-network` 请求校内网或本地地址。可使用重复的 `--header NAME=VALUE` 或 `--headers-file` 为网页、图片和附件请求提供站点要求的 header；header 值不写入报告。
 
 网页和单个资源的读取上限为 64 MiB。图片按 JPEG、PNG、GIF、WebP 文件签名保存；响应类型与签名冲突时记录下载错误。
 
@@ -52,7 +52,7 @@ UEditor 的保存结果是 HTML。结构还原以这份 HTML 中的内容为依�
 
 项目使用 Rust 1.98.1 及以上版本。CI 配置覆盖 Linux、Windows、macOS 的 stable 工具链，并单独检查 1.98.1；执行格式检查、Clippy、测试和 release 构建。测试包含本地网络服务、混合容器、Office 命名空间及确定性生成的畸形输入。
 
-`rust-toolchain.toml` 选择 stable，并安装 rustfmt 和 Clippy。Cargo 配置禁止 unsafe，Clippy 默认将告警视为错误；release 使用 thin LTO 并剥离符号。CI 缓存 Rust 构建产物，独立运行 cargo-audit；Dependabot 每周检查 Rust 依赖及 Actions 更新。贡献约定见 [CONTRIBUTING.md](../CONTRIBUTING.md)。
+`rust-toolchain.toml` 选择 stable，并安装 rustfmt 和 Clippy。release 使用 thin LTO 并剥离符号。CI 缓存 Rust 构建产物。贡献约定见 [CONTRIBUTING.md](../CONTRIBUTING.md)。
 
 UEditor 的参考提交和许可证位置见 [规则来源](ueditor-reference.md)。
 
@@ -131,7 +131,19 @@ cargo build --release
 
 `vendor/ueditor` 保存 UEditor 源码参考副本。实现参考了 `_src/core/Editor.js`、`htmlparser.js`、`filternode.js`、`filterword.js`、`dtd.js`、`domUtils.js`、`_src/plugins/paste.js` 和 `_parse/parse.js`。规则说明见 [SOURCE_RULES.md](../SOURCE_RULES.md)。
 
-### 真实页面验收
+### UEditor 内容规则
+
+`code.rs` 读取 pre 的 `brush:语言`、`language-语言`、`data-lang`，也读取直接子 code 的语言标记。`code_language` 写入文章 JSON，HTML 使用 `language-*` class，Markdown 使用围栏语言，Typst 使用 raw 的 lang 参数。代码中的 br 转为换行；带 brush 标记的 pre 将 NBSP 转为普通空格（N0032），其他 pre 保留 NBSP。代码字面文本保留 `undefinedundefined`。
+
+文字片段的 `inline_kind` 可为 `code`、`keyboard`、`sample`、`variable`。定义列表使用 `definition_list`，其 children 按原顺序保存 `definition_term` 和 `definition_description`；同一术语可有多个解释，也可保留多个术语共用解释的顺序。
+
+`tag_registry.rs` 为解析和诊断提供块、行内、容器、部分转换、排除和未知标签的分类。colgroup/col 和已支持的容器不报告 W0009；figure/details 等展开为内容时保留该警告。媒体地址经过 URL 检查后转换为链接，SVG 使用 title/desc/text，MathML 优先使用 annotation。静态 HTML 解析关闭 scripting 模式，以读取 noscript 的备用内容。
+
+`depth.rs` 在正文递归解析前迭代检查 HTML 深度，上限为 256；正文块嵌套上限为 24，以使含表格的 JSON 可重新读入。超限部分迭代提取文本并报告 W0019。`_baidu_bookmark_*` span 移除并报告 N0031。
+
+本地样例为 `fixtures/ueditor-semantics.html`；`semantics_tests.rs` 检查导出与 JSON 再读入、媒体资源、文本顺序和深层 HTML。
+
+### 真实页面验收命令
 
 独立验收脚本从东南大学教务处“最新动态”列表收集文章，调用单页 CLI 生成样例：
 
@@ -139,7 +151,7 @@ cargo build --release
 node scripts/acceptance.mjs --output acceptance-output --max 200 --pages 20
 ```
 
-验收脚本也支持显式传递 `--allow-private-network`，用于校内网或本地测试地址；该选项不会默认启用：
+验收脚本支持传递 `--allow-private-network`：
 
 ```sh
 node scripts/acceptance.mjs --allow-private-network

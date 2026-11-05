@@ -2,6 +2,8 @@
 
 把网页文章整理成 HTML、Markdown 或 Typst，方便阅读、编辑和排版。支持 UEditor / WebPlus 网站中的标题、段落、图片、附件、链接、列表和表格。
 
+代码块保留语言、换行和缩进；支持行内代码、术语解释列表及备用图片。视频、音频和嵌入页面转换为链接，图形和公式保留可提取的文字并给出提示。
+
 ## 安装
 
 安装 Rust 1.98.1 或更新版本后，在项目目录运行：
@@ -39,6 +41,8 @@ ue-weave --input page.html --output output/ --formats markdown
 
 多种格式用逗号分隔，例如 `--formats html,typst`。重复使用同一输出目录时，同名文档会更新，其他已有文件保留。
 
+字体名中的编辑器异常字符串默认会自动修复；如需保留原始值，使用 `--no-repair-corrupt-fonts`。
+
 ## 选择输出风格
 
 | 选项 | 效果 |
@@ -67,7 +71,7 @@ ue-weave 'https://jwc.seu.edu.cn/2026/0915/c21679a583204/page.htm' \
 
 默认保留远程资源链接。网页中的相对链接会转为完整网址；本地 HTML 中的路径保持原样。
 
-部分学校会要求特定的 HTTP header。可重复使用 `--header NAME=VALUE`；页面、图片和附件请求共用这些 header：
+部分学校会要求特定的 HTTP header。可重复使用 `--header NAME=VALUE`；这些 header 用于与输入网址协议、主机和端口相同的页面、图片及附件请求：
 
 ```sh
 ue-weave 'https://example.edu/article.htm' \
@@ -90,7 +94,7 @@ ue-weave 'https://example.edu/article.htm' \
   --headers-file headers.json --output output/
 ```
 
-不要设置 `Host`、`Content-Length`、`Connection` 或 `Transfer-Encoding`。header 值不会写入报告；敏感 Cookie 不建议直接放在 shell 历史中。
+header 值不会写入报告。
 
 ## 显示标题、日期和作者
 

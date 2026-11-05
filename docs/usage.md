@@ -21,6 +21,7 @@
 | 开关 | 作用 | 保守 | 均衡 | 激进 |
 | --- | --- | --- | --- | --- |
 | `--strip-fonts` | 移除字体、字号 | 关 | 开 | 开 |
+| `--no-repair-corrupt-fonts` | 不修复字体名中的编辑器异常字符串 | 关 | 关 | 关 |
 | `--strip-colors` | 移除文字颜色、背景色 | 关 | 关 | 开 |
 | `--strip-layout` | 移除行距、段间距、固定表格尺寸、单元格内边距 | 关 | 开 | 开 |
 | `--strip-alignment` | 移除显式文本对齐 | 关 | 关 | 开 |
@@ -56,7 +57,13 @@ ue-weave --input page.html --output output/ \
 # 保守档移除字体名称和图片固定尺寸
 ue-weave --input page.html --output output/ \
   --profile conservative --strip-font-family --strip-image-dimensions
+
+# 保留损坏字体名的原始值
+ue-weave --input page.html --output output/ \
+  --no-repair-corrupt-fonts
 ```
+
+字体名中由编辑器产生的 `undefined` 包装默认会被清理，并对包含空格的字体名补充一对引号。例如 `undefinedundefinedmicrosoft yaheiundefinedundefined` 会还原为 `"microsoft yahei"`。添加 `--json` 可在标准输出的 `output_changes` 中查看修复记录；使用 `--no-repair-corrupt-fonts` 可保留原值。移除字体的开关仍会按所选预设生效。
 
 三档均保留正文、粗体、斜体、下划线、删除线、正文内换行、链接、图片、列表层级和表格合并结构。Markdown 通过内嵌 HTML 表达复杂表格、特殊编号和样式；Typst 将结构映射为排版元素，字体由本地字体库解析，缺失时使用回退字体。
 
@@ -93,7 +100,7 @@ header 文件格式为 JSON 对象，例如：
 }
 ```
 
-命令行 header 与文件中的 header 合并；同名 header 后出现的值覆盖前面的值。不要设置 `Host`、`Content-Length`、`Connection` 或 `Transfer-Encoding`。header 值不会写入报告。
+命令行 header 与文件中的 header 合并；同名 header 后出现的值覆盖前面的值。自定义 header 只发送到与输入网址协议、主机和端口相同的地址，每次重定向也会检查。使用本地 HTML 输入时，自定义 header 不发送。header 值不会写入报告。
 
 ## 站点选择器配置
 
