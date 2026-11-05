@@ -13,20 +13,20 @@ comfy-table = { version = "8", features = ["custom_styling"] }
 terminal_size = "0.4"
 encoding_rs = "0.8"
 clap = { version = "4", features = ["derive"] }
-html-escape = "0.2"
+html-escape = "0.3"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 rustls = { version = "0.23", default-features = false }
-scraper = "0.22"
-html5ever = "0.29"
-tendril = "0.4"
-ego-tree = "0.10"
+scraper = "0.29"
+html5ever = "0.40"
+tendril = "0.5"
+ego-tree = "0.11"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
 url = "2"
 tokio = { version = "1", features = ["rt"] }
-sha2 = "0.10"
-cssparser = "0.34"
+sha2 = "0.11"
+cssparser = "0.38"
 percent-encoding = "2"
 
 [dev-dependencies]
