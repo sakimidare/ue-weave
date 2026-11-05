@@ -222,7 +222,7 @@ fn font_families(value: &str) -> Vec<String> {
 }
 
 fn block_typst(block: &Block) -> String {
-    let content = block.runs.iter().map(run_typst).collect::<String>();
+    let content = crate::output_runs::render(&block.runs, run_typst);
     match block.kind.as_str() {
         "definition_list" => block
             .children
@@ -430,7 +430,7 @@ fn table_typst(block: &Block) -> String {
                     occupied.insert((col, row));
                 }
             }
-            let mut content = cell.runs.iter().map(run_typst).collect::<String>();
+            let mut content = crate::output_runs::render(&cell.runs, run_typst);
             content.push_str(
                 &cell
                     .blocks
@@ -482,7 +482,7 @@ fn table_typst(block: &Block) -> String {
     let caption = block
         .caption
         .as_ref()
-        .map(|runs| runs.iter().map(run_typst).collect::<String>())
+        .map(|runs| crate::output_runs::render(runs, run_typst))
         .unwrap_or_default();
     if columns == 0 {
         return caption;

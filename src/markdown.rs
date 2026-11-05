@@ -1,4 +1,6 @@
 use crate::model::{Block, Ir, Run};
+#[cfg(test)]
+mod emphasis_tests;
 pub(crate) mod table;
 
 pub(crate) fn escape_text(value: &str) -> String {
@@ -63,6 +65,13 @@ fn run_markdown(run: &Run) -> String {
     {
         return crate::renderer::run_html(run);
     }
+    if (run.bold || run.italic || run.strike)
+        && (run.text.starts_with(char::is_whitespace)
+            || run.text.ends_with(char::is_whitespace)
+            || run.text.is_empty())
+    {
+        return crate::renderer::run_html(run);
+    }
     let mut text = match run.inline_kind {
         Some(crate::model::InlineKind::Code) if !run.text.contains(['\n', '\r']) => {
             let fence = "`".repeat(
@@ -115,7 +124,9 @@ fn run_markdown(run: &Run) -> String {
 }
 
 fn runs_markdown(runs: &[Run]) -> String {
-    runs.iter()
+    let runs = crate::output_runs::coalesce(runs);
+    let rendered: Vec<_> = runs
+        .iter()
         .enumerate()
         .map(|(index, run)| {
             let adjacent_code = run.inline_kind == Some(crate::model::InlineKind::Code)
@@ -130,6 +141,39 @@ fn runs_markdown(runs: &[Run]) -> String {
                 crate::renderer::run_html(run)
             } else {
                 run_markdown(run)
+            }
+        })
+        .collect();
+    rendered
+        .iter()
+        .enumerate()
+        .map(|(index, text)| {
+            let touches = |left: &str, right: &str| {
+                ['*', '~']
+                    .iter()
+                    .any(|marker| left.ends_with(*marker) && right.starts_with(*marker))
+            };
+            let collision = index
+                .checked_sub(1)
+                .is_some_and(|i| touches(&rendered[i], text))
+                || rendered
+                    .get(index + 1)
+                    .is_some_and(|next| touches(text, next));
+            let punctuation = |ch: char| !ch.is_alphanumeric() && !ch.is_whitespace();
+            let opening = text.starts_with('*')
+                && text.trim_start_matches('*').starts_with(punctuation)
+                && index
+                    .checked_sub(1)
+                    .is_some_and(|i| rendered[i].ends_with(char::is_alphanumeric));
+            let closing = text.ends_with('*')
+                && text.trim_end_matches('*').ends_with(punctuation)
+                && rendered
+                    .get(index + 1)
+                    .is_some_and(|next| next.starts_with(char::is_alphanumeric));
+            if collision || opening || closing {
+                crate::renderer::run_html(&runs[index])
+            } else {
+                text.clone()
             }
         })
         .collect()

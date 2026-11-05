@@ -133,6 +133,8 @@ cargo build --release
 
 ### UEditor 内容规则
 
+导出器通过 `output_runs.rs` 合并相邻且最终格式相同的普通文字；链接、图片、换行、行内代码保留边界。合并在输出预设生效后进行，解析结果及文字来源记录保持原样。Markdown 对相邻强调标记、首尾空白和标点边界使用 HTML 标签；测试使用 `pulldown-cmark` 核对生成内容的文字和格式。
+
 `code.rs` 读取 pre 的 `brush:语言`、`language-语言`、`data-lang`，也读取直接子 code 的语言标记。`code_language` 写入文章 JSON，HTML 使用 `language-*` class，Markdown 使用围栏语言，Typst 使用 raw 的 lang 参数。代码中的 br 转为换行；带 brush 标记的 pre 将 NBSP 转为普通空格（N0032），其他 pre 保留 NBSP。代码字面文本保留 `undefinedundefined`。
 
 文字片段的 `inline_kind` 可为 `code`、`keyboard`、`sample`、`variable`。定义列表使用 `definition_list`，其 children 按原顺序保存 `definition_term` 和 `definition_description`；同一术语可有多个解释，也可保留多个术语共用解释的顺序。

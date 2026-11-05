@@ -122,7 +122,7 @@ pub(crate) fn block_html(block: &Block) -> String {
             };
             return format!(
                 "<{tag}>{}{}</{tag}>",
-                block.runs.iter().map(run_html).collect::<String>(),
+                crate::output_runs::render(&block.runs, run_html),
                 block.children.iter().map(block_html).collect::<String>()
             );
         }
@@ -179,7 +179,7 @@ pub(crate) fn block_html(block: &Block) -> String {
                 .list_value
                 .map(|value| format!(" value=\"{value}\""))
                 .unwrap_or_default(),
-            block.runs.iter().map(run_html).collect::<String>(),
+            crate::output_runs::render(&block.runs, run_html),
             block.children.iter().map(block_html).collect::<String>()
         );
     }
@@ -206,7 +206,7 @@ pub(crate) fn block_html(block: &Block) -> String {
         if let Some(caption) = &block.caption {
             html.push_str(&format!(
                 "<caption>{}</caption>",
-                caption.iter().map(run_html).collect::<String>()
+                crate::output_runs::render(caption, run_html)
             ));
         }
         let mut previous_group: Option<&crate::model::RowGroup> = None;
@@ -252,7 +252,7 @@ pub(crate) fn block_html(block: &Block) -> String {
                     "<{tag} colspan=\"{}\" rowspan=\"{}\"{style}>{}</{tag}>",
                     cell.colspan,
                     cell.rowspan,
-                    cell.runs.iter().map(run_html).collect::<String>()
+                    crate::output_runs::render(&cell.runs, run_html)
                         + &cell.blocks.iter().map(block_html).collect::<String>()
                 ));
             }
@@ -307,7 +307,7 @@ pub(crate) fn block_html(block: &Block) -> String {
     };
     format!(
         "<{tag}{inferred}{align}>{}</{tag}>",
-        block.runs.iter().map(run_html).collect::<String>()
+        crate::output_runs::render(&block.runs, run_html)
     )
 }
 
@@ -320,11 +320,7 @@ pub fn render(ir: &Ir) -> String {
             while index < ir.blocks.len() && ir.blocks[index].kind == "list_item" {
                 items.push(format!(
                     "<li>{}</li>",
-                    ir.blocks[index]
-                        .runs
-                        .iter()
-                        .map(run_html)
-                        .collect::<String>()
+                    crate::output_runs::render(&ir.blocks[index].runs, run_html)
                 ));
                 index += 1;
             }

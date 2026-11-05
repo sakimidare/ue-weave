@@ -30,6 +30,7 @@ cssparser = "0.34"
 percent-encoding = "2"
 
 [dev-dependencies]
+pulldown-cmark = "0.13"
 console = "0.16"
 tempfile = "3"
 
