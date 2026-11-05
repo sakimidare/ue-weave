@@ -204,15 +204,6 @@ pub fn parse(
     ir.metadata.extend(crate::site::metadata(document));
     collect_assets(root, &base_url, &mut ir, &snapshot);
     parse_blocks(root, &base_url, no_inference, &snapshot, &mut ir);
-    for block in &mut ir.blocks {
-        block.visit_runs_mut(&mut |run| {
-            run.source_nodes = run
-                .source_nodes
-                .iter()
-                .filter_map(|id| snapshot.resolve(id).map(str::to_owned))
-                .collect();
-        });
-    }
     ir.original_nodes = snapshot.nodes;
     crate::audit::append_diagnostics(&mut ir);
     crate::inference::annotate(&mut ir, no_inference);
@@ -272,6 +263,7 @@ fn is_container(tag: &str) -> bool {
 fn collect_candidates<'a>(
     root: ElementRef<'a>,
     context: &RunContext,
+    snapshot: &crate::snapshot::Snapshot,
     output: &mut Vec<BlockCandidate<'a>>,
 ) {
     let context = context.for_element(root);
@@ -316,18 +308,22 @@ fn collect_candidates<'a>(
                 if element.children().next().is_none() && name == "div" {
                     output.push(BlockCandidate::Element(element));
                 } else {
-                    collect_candidates(element, &context, output);
+                    collect_candidates(element, &context, snapshot, output);
                 }
             } else if matches!(name, "img" | "v:imagedata") {
-                if let Some(run) = image_run(element, &context) {
+                if let Some(run) = image_run(element, &context, snapshot) {
                     pending.push(run);
                 }
             } else {
-                visit_node(element, &context, &mut pending);
+                visit_node(element, &context, snapshot, &mut pending);
             }
         } else if let Node::Text(text) = child.value() {
             if let Some(mut run) = text_run(text, &context) {
-                run.source_nodes = vec![format!("{:?}", child.id())];
+                run.source_nodes = snapshot
+                    .id_of(child.id())
+                    .map(str::to_owned)
+                    .into_iter()
+                    .collect();
                 pending.push(run);
             }
         }
@@ -343,7 +339,12 @@ fn parse_blocks(
     ir: &mut Ir,
 ) {
     let mut candidates = Vec::new();
-    collect_candidates(root, &inherited_context(root, base_url), &mut candidates);
+    collect_candidates(
+        root,
+        &inherited_context(root, base_url),
+        snapshot,
+        &mut candidates,
+    );
     for candidate in candidates {
         let (el, inline) = match candidate {
             BlockCandidate::Element(el) => (el, None),
@@ -457,7 +458,12 @@ fn parse_blocks(
                             ir.warnings.extend(child_ir.warnings);
                             let mut content = Vec::new();
                             if child_ir.blocks.is_empty() {
-                                visit_node(cell, &inherited_context(cell, base_url), &mut content);
+                                visit_node(
+                                    cell,
+                                    &inherited_context(cell, base_url),
+                                    snapshot,
+                                    &mut content,
+                                );
                             }
                             crate::model::TableCell {
                                 styles: crate::table::cell_styles(cell, snapshot.element_id(cell)),
@@ -514,7 +520,7 @@ fn parse_blocks(
                     .children()
                     .filter_map(ElementRef::wrap)
                     .find(|child| child.value().name() == "caption")
-                    .map(|caption| runs(caption, base_url)),
+                    .map(|caption| runs(caption, base_url, snapshot)),
                 list: None,
                 line_height: None,
                 rows,
@@ -647,7 +653,7 @@ fn parse_blocks(
                 },
             ));
         }
-        let mut block_runs = inline.unwrap_or_else(|| runs(el, base_url));
+        let mut block_runs = inline.unwrap_or_else(|| runs(el, base_url, snapshot));
         for run in &mut block_runs {
             if let Some(link) = &run.link {
                 run.link = Some(rules::absolute_url(base_url.as_ref(), link));

@@ -10,13 +10,13 @@
 
 `main.rs` 调用命令入口；`cli.rs` 管理 clap 参数和退出状态；`pipeline.rs` 依次读取输入、解析正文、处理资源、生成文件和汇报结果。URL 输入与本地文件通过 `Source` 枚举区分。一次处理按需创建一个网络客户端，网页与资源下载共用客户端及重试设置。
 
-错误路径使用 clap 的部分解析结果取得颜色和 JSON 选项，遵循 `--` 分隔符及选项值的边界。解析在遇到错误参数时停止；需要指定错误输出方式时，将 `--json`、`--color` 放在可能出错的参数前。
+错误路径不对不完整的 clap `ArgMatches` 做二次读取；颜色和 JSON 输出选项从原始参数中按 `--` 分隔符及选项值边界安全提取。解析在遇到错误参数时停止；需要指定错误输出方式时，将 `--json`、`--color` 放在可能出错的参数前。
 
 ## 文章 JSON 与解析记录
 
 `document.rs` 定义文章 JSON：文章信息、正文格式和资源。格式字段保存具体值，空值和默认布尔值省略。`model.rs` 定义解析数据，供日志、校验和格式处理使用。`ir_format.rs` 负责读取 JSON 并转换为渲染器使用的数据。
 
-正文块、文字片段和资源通过 `source_nodes` 引用 `original_nodes` 中的节点。节点记录包含 ID、父子关系、标签、属性和解码后的文本；节点 ID 在同一份文档中唯一。读取 JSON 时检查引用、父子关系和循环。用户新增的内容可以省略来源引用。
+正文块、文字片段和资源通过 `source_nodes` 引用 `original_nodes` 中的节点。解析阶段使用 `scraper`/`ego-tree` 的真实 `NodeId` 建立临时映射，再输出稳定的 `n0`、`n1` 等快照 ID；不依赖 `NodeId` 的 Debug 字符串格式。节点记录包含 ID、父子关系、标签、属性和解码后的文本；节点 ID 在同一份文档中唯一。读取 JSON 时检查引用、父子关系和循环。用户新增的内容可以省略来源引用。
 
 ## 还原规则与报告
 
@@ -38,7 +38,7 @@ UEditor 的保存结果是 HTML。结构还原以这份 HTML 中的内容为依�
 
 ### 资源下载
 
-默认请求公网地址。初始 URL、重定向目标和 DNS 返回的实际连接地址均参与校验；内部网站使用 `--allow-private-network`。请求直接连接目标，系统代理环境变量保持独立于此下载流程。
+默认请求公网地址。初始 URL、重定向目标和 DNS 返回的实际连接地址均参与校验；内部网站使用 `--allow-private-network`。请求直接连接目标，系统代理环境变量保持独立于此下载流程。可使用重复的 `--header NAME=VALUE` 或 `--headers-file` 为网页、图片和附件请求提供站点要求的 header；header 值不写入报告，受客户端管理的连接级 header 会被拒绝。
 
 网页和单个资源的读取上限为 64 MiB。图片按 JPEG、PNG、GIF、WebP 文件签名保存；响应类型与签名冲突时记录下载错误。
 
@@ -137,6 +137,12 @@ cargo build --release
 
 ```sh
 node scripts/acceptance.mjs --output acceptance-output --max 200 --pages 20
+```
+
+验收脚本也支持显式传递 `--allow-private-network`，用于校内网或本地测试地址；该选项不会默认启用：
+
+```sh
+node scripts/acceptance.mjs --allow-private-network
 ```
 
 脚本依赖 Node.js、curl 和 Cargo；安装 Typst 后会生成 PDF。默认下载图片，添加 `--download-attachments` 可下载附件。请求间隔为 350ms，默认最多抓取 200 篇文章、20 个列表页。

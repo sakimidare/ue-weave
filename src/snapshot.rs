@@ -1,4 +1,5 @@
 //! 记录解析后 DOM 的来源关系；文字值已经过实体解码。
+use ego_tree::NodeId;
 use scraper::{ElementRef, Node};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -139,29 +140,28 @@ pub fn validate(document: &Value) -> crate::error::Result<()> {
 
 pub struct Snapshot {
     pub nodes: Vec<Value>,
-    ids: HashMap<String, String>,
+    ids: HashMap<NodeId, String>,
 }
 
 impl Snapshot {
-    pub fn resolve(&self, id: &str) -> Option<&str> {
-        self.ids.get(id).map(String::as_str)
+    /// 返回节点在原始节点列表中的 `n{index}` 标识；节点不在快照内时为 None。
+    pub fn id_of(&self, id: NodeId) -> Option<&str> {
+        self.ids.get(&id).map(String::as_str)
     }
     pub fn capture(root: ElementRef) -> Self {
         let ids: HashMap<_, _> = root
             .descendants()
             .enumerate()
-            .map(|(index, node)| (format!("{:?}", node.id()), format!("n{index}")))
+            .map(|(index, node)| (node.id(), format!("n{index}")))
             .collect();
         let nodes = root
             .descendants()
             .map(|node| {
-                let id = &ids[&format!("{:?}", node.id())];
-                let parent = node
-                    .parent()
-                    .and_then(|parent| ids.get(&format!("{:?}", parent.id())));
+                let id = &ids[&node.id()];
+                let parent = node.parent().and_then(|parent| ids.get(&parent.id()));
                 let children: Vec<_> = node
                     .children()
-                    .filter_map(|child| ids.get(&format!("{:?}", child.id())))
+                    .filter_map(|child| ids.get(&child.id()))
                     .collect();
                 let mut record = json!({"id":id,"parent":parent,"children":children});
                 match node.value() {
@@ -194,11 +194,11 @@ impl Snapshot {
     }
 
     pub fn element_id(&self, element: ElementRef) -> &str {
-        &self.ids[&format!("{:?}", element.id())]
+        &self.ids[&element.id()]
     }
 
     pub fn contains(&self, element: ElementRef) -> bool {
-        self.ids.contains_key(&format!("{:?}", element.id()))
+        self.ids.contains_key(&element.id())
     }
 }
 
@@ -271,5 +271,27 @@ mod tests {
                 .unwrap()
                 .original_nodes
         );
+    }
+
+    #[test]
+    fn inline_runs_use_snapshot_ids_for_text_breaks_and_images() {
+        let html =
+            "<div class='Article_Content'><p>前<br><img src='image.png' alt='图'>后</p></div>";
+        let document = Html::parse_document(html);
+        let ir = crate::parser::parse(&document, ".Article_Content", false, None).unwrap();
+        let block = &ir.blocks[0];
+        assert!(block.runs.iter().any(|run| run.line_break));
+        assert!(block.runs.iter().any(|run| run.image.is_some()));
+        for run in &block.runs {
+            for id in &run.source_nodes {
+                let node = ir.original_nodes.iter().find(|node| node["id"] == *id);
+                assert!(node.is_some(), "missing source node {id}");
+            }
+        }
+        assert!(block
+            .runs
+            .iter()
+            .flat_map(|run| run.source_nodes.iter())
+            .all(|id| id.starts_with('n')));
     }
 }

@@ -1711,6 +1711,7 @@ dependencies = [
  "comfy-table",
  "console",
  "cssparser",
+ "ego-tree",
  "encoding_rs",
  "html-escape",
  "percent-encoding",

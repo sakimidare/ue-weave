@@ -9,7 +9,7 @@ const project = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const option = (name, fallback) => args.includes(name) ? args[args.indexOf(name) + 1] : fallback;
 if (args.includes('--help')) {
-  console.log('node scripts/acceptance.mjs [--output DIR] [--max 200] [--pages 20] [--profile conservative|balanced|aggressive] [--include-metadata] [--download-attachments]');
+  console.log('node scripts/acceptance.mjs [--output DIR] [--max 200] [--pages 20] [--profile conservative|balanced|aggressive] [--include-metadata] [--download-attachments] [--allow-private-network]');
   process.exit(0);
 }
 const output = resolve(option('--output', join(project, 'acceptance-output')));
@@ -85,6 +85,7 @@ for (const [url, title] of articles) {
   const command = [url, '--output', destination, '--download-images', '--formats', 'html,markdown,typst,json', '--json', '--profile', profile];
   if (args.includes('--include-metadata')) command.push('--include-metadata');
   if (args.includes('--download-attachments')) command.push('--download-attachments');
+  if (args.includes('--allow-private-network')) command.push('--allow-private-network');
   const result = await run(binary, command, 180000);
   const record = { index, url, title, directory, ok: result.code === 0, pdf: false };
   let log = `${url}\n${result.stderr}\n${result.stdout}`;

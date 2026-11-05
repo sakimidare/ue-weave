@@ -1,4 +1,4 @@
-use crate::{model::Run, rules};
+use crate::{model::Run, rules, snapshot::Snapshot};
 use scraper::{ElementRef, Node};
 use url::Url;
 
@@ -134,14 +134,18 @@ pub(crate) fn text_run(text: &str, context: &RunContext) -> Option<Run> {
     })
 }
 
-pub(crate) fn image_run(element: ElementRef, context: &RunContext) -> Option<Run> {
+pub(crate) fn image_run(
+    element: ElementRef,
+    context: &RunContext,
+    snapshot: &Snapshot,
+) -> Option<Run> {
     (!rules::attachment_icon(element)
         && element
             .value()
             .attr("src")
             .is_some_and(|value| crate::safety::safe_url(value, true)))
     .then(|| Run {
-        source_nodes: vec![format!("{:?}", element.id())],
+        source_nodes: snapshot_node(snapshot, element.id()),
         line_break: false,
         image_attributes: Some(crate::model::ImageAttributes {
             alt: element.value().attr("alt").map(str::to_string),
@@ -172,19 +176,24 @@ pub(crate) fn image_run(element: ElementRef, context: &RunContext) -> Option<Run
     })
 }
 
-pub(crate) fn visit_node(element: ElementRef, context: &RunContext, output: &mut Vec<Run>) {
+pub(crate) fn visit_node(
+    element: ElementRef,
+    context: &RunContext,
+    snapshot: &Snapshot,
+    output: &mut Vec<Run>,
+) {
     if let Some((href, title)) = crate::attachment::embedded_pdf(element) {
         let mut run =
             text_run(&title, &context.for_element(element)).expect("PDF title is nonempty");
         run.link = Some(rules::absolute_url(context.base_url.as_ref(), &href));
-        run.source_nodes = vec![format!("{:?}", element.id())];
+        run.source_nodes = snapshot_node(snapshot, element.id());
         output.push(run);
         return;
     }
     if element.value().name() == "br" {
         let mut run = text_run("\n", context).expect("newline is nonempty");
         run.line_break = true;
-        run.source_nodes = vec![format!("{:?}", element.id())];
+        run.source_nodes = snapshot_node(snapshot, element.id());
         output.push(run);
         return;
     }
@@ -198,19 +207,24 @@ pub(crate) fn visit_node(element: ElementRef, context: &RunContext, output: &mut
     for child in element.children() {
         if let Some(child_element) = ElementRef::wrap(child) {
             if matches!(child_element.value().name(), "img" | "v:imagedata") {
-                if let Some(run) = image_run(child_element, &context) {
+                if let Some(run) = image_run(child_element, &context, snapshot) {
                     output.push(run);
                 }
             } else {
-                visit_node(child_element, &context, output);
+                visit_node(child_element, &context, snapshot, output);
             }
         } else if let Node::Text(value) = child.value() {
             if let Some(mut run) = text_run(value, &context) {
-                run.source_nodes = vec![format!("{:?}", child.id())];
+                run.source_nodes = snapshot_node(snapshot, child.id());
                 output.push(run);
             }
         }
     }
+}
+
+/// 把节点映射为原始节点标识；节点不在快照内时返回空列表。
+fn snapshot_node(snapshot: &Snapshot, id: ego_tree::NodeId) -> Vec<String> {
+    snapshot.id_of(id).map(str::to_owned).into_iter().collect()
 }
 
 pub(crate) fn inherited_context(root: ElementRef, base_url: &Option<Url>) -> RunContext {
@@ -224,8 +238,13 @@ pub(crate) fn inherited_context(root: ElementRef, base_url: &Option<Url>) -> Run
     )
 }
 
-pub(crate) fn runs(root: ElementRef, base_url: &Option<Url>) -> Vec<Run> {
+pub(crate) fn runs(root: ElementRef, base_url: &Option<Url>, snapshot: &Snapshot) -> Vec<Run> {
     let mut output = Vec::new();
-    visit_node(root, &inherited_context(root, base_url), &mut output);
+    visit_node(
+        root,
+        &inherited_context(root, base_url),
+        snapshot,
+        &mut output,
+    );
     output
 }
