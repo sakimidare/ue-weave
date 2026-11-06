@@ -40,7 +40,7 @@ UEditor 的保存结果是 HTML。结构还原以这份 HTML 中的内容为依�
 
 使用 `--allow-private-network` 请求校内网或本地地址。可使用重复的 `--header NAME=VALUE` 或 `--headers-file` 为网页、图片和附件请求提供站点要求的 header；header 值不写入报告。
 
-网页和单个资源的读取上限为 64 MiB。图片按 JPEG、PNG、GIF、WebP 文件签名保存；响应类型与签名冲突时记录下载错误。
+网页和单个资源的读取上限为 64 MiB。图片按 JPEG、PNG、GIF、WebP 文件签名保存；图片响应类型与实际图片格式不同时，按实际格式保存并记录 W0015。HTML 提示页和其他非图片内容报告下载错误。
 
 附件文件名依次参考响应头 `Content-Disposition`（包括 UTF-8 `filename*`）、附件标题和最终 URL。中文名称保留，路径分隔符转换为普通字符。ZIP 文件可保留 DOCX、XLSX、PPTX、EPUB 等原来的扩展名，OLE 文件可保留 DOC、XLS、PPT 等扩展名；记录中的 `detected_type` 表示检测到的容器类型。其他数据文件保留原来的扩展名，内容类型记为 `unknown`。内容签名与扩展名冲突时调整扩展名，并写入处理记录；程序、脚本或 HTML 等可执行内容使用 `.download`。文件名和内容类型均未提供扩展名时使用 `.bin`。资源以普通数据文件权限创建，同名文件使用新文件名。
 
@@ -162,3 +162,16 @@ node scripts/acceptance.mjs --allow-private-network
 脚本依赖 Node.js、curl 和 Cargo；安装 Typst 后会生成 PDF。默认下载图片，添加 `--download-attachments` 可下载附件。请求间隔为 350ms，默认最多抓取 200 篇文章、20 个列表页。
 
 输出目录的 `index.html` 提供验收入口，`manifest.json` 汇总结果，`urls.txt` 保存文章 URL。各文章目录包含最终文档和运行日志。重复运行会重新抓取，可用不同输出目录保存各轮结果。
+
+抓取教务处 2020 年及之后的公开文章：
+
+```sh
+cargo build --locked
+node scripts/jwc-archive.mjs output/jwc-aggressive-2020
+```
+
+此脚本从官网首页遍历可达栏目及全部分页，按文章 URL 年份筛选、文章 ID 去重，使用激进模式和顶部元数据。下载图片，附件保留链接，输出按年份分目录；安装 Typst 后生成 PDF。列表最多并发 4 个请求，文章最多并发 3 个，每批间隔 300ms。`state.json` 保存进度，重复运行同一输出目录可继续未完成任务。栏目请求失败写入 `manifest.json` 的 `discovery_errors`。
+
+完成抓取后，运行 `node scripts/check-jwc-archive.mjs 输出目录` 可复核失败页面，区分校内访问、原网页正文为空等情况，并生成 `quality-summary.json`。再次运行抓取脚本会用这些记录更新验收首页。
+
+增量复核可使用 `--retry-failed` 重试失败文章，`--retry-images` 重试图片下载失败的文章，或 `--refresh --ids 318274,346303` 重新生成指定文章。`--ids` 使用文章网址中的文章编号。校园网连接可通过 `--resolve jwc.seu.edu.cn=10.64.84.122 --allow-private-network` 指定访问地址；地址按当前网络配置填写。抓取脚本会将这些网络选项传给单页工具。

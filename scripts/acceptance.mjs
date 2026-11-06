@@ -102,7 +102,7 @@ for (const [url, title] of articles) {
     record.title = ir.metadata.title || title || id;
     const report = JSON.parse(result.stdout);
     record.integrity = report.content_integrity?.value;
-    record.warning_count = report.warnings.length;
+    record.warning_count = report.warnings.filter(w => w.level === 'warning').length;
     const pdf = await run('typst', ['compile', join(destination, 'reconstructed.typ'), join(destination, 'result.pdf')], 60000);
     record.pdf = pdf.code === 0;
     await writeFile(join(destination, 'typst.log'), pdf.stderr + pdf.stdout);
