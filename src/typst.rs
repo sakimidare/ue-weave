@@ -335,7 +335,8 @@ fn block_typst(block: &Block) -> String {
                 let marker = match block.list.as_ref().and_then(|list| list.style.as_deref()) {
                     Some("circle") => Some("○"),
                     Some("square") => Some("▪"),
-                    Some("disc") => Some("•"),
+                    Some("disc" | "dot") => Some("•"),
+                    Some("dash") => Some("–"),
                     Some("none") => Some(""),
                     _ => None,
                 };

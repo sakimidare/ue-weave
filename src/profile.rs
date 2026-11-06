@@ -341,10 +341,11 @@ fn transform(
             !(block.kind == "paragraph"
                 && block.children.is_empty()
                 && block.rows.is_empty()
-                && block
-                    .runs
-                    .iter()
-                    .all(|run| run.image.is_none() && run.text.chars().all(char::is_whitespace)))
+                && block.runs.iter().all(|run| {
+                    run.image.is_none()
+                        && run.link.is_none()
+                        && run.text.chars().all(char::is_whitespace)
+                }))
         });
     }
 }

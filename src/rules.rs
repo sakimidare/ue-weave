@@ -38,7 +38,13 @@ pub fn has_tag(el: ElementRef, name: &str) -> bool {
 }
 
 pub fn list_style(el: ElementRef) -> Option<String> {
-    style(el, "list-style-type").or_else(|| {
+    let explicit = style(el, "list-style-type");
+    if el.value().name() == "ul" && explicit.as_deref().is_none_or(|style| style == "none") {
+        if let Some(marker @ ("dot" | "dash")) = custom_list_style(el) {
+            return Some(marker.into());
+        }
+    }
+    explicit.or_else(|| {
         let value = el.value().attr("type")?;
         let style = match (el.value().name(), value) {
             ("ol", "1") => "decimal",
@@ -78,6 +84,30 @@ pub fn attachment_icon(el: ElementRef) -> bool {
             .attr("src")
             .unwrap_or("")
             .contains("icon_doc.gif")
+        || el.value().attr("src").is_some_and(|src| {
+            let path = src.split(['?', '#']).next().unwrap_or(src);
+            let Some((directory, name)) = path.rsplit_once('/') else {
+                return false;
+            };
+            (directory.ends_with("/_ueditor/themes/default/images")
+                || directory.ends_with("/ueditor/dialogs/attachment/fileTypeImages")
+                || directory.ends_with("/_ueditor/dialogs/attachment/fileTypeImages"))
+                && matches!(
+                    name,
+                    "icon_xls.gif"
+                        | "icon_ppt.gif"
+                        | "icon_pdf.gif"
+                        | "icon_txt.gif"
+                        | "icon_rar.gif"
+                        | "icon_chm.gif"
+                        | "icon_exe.gif"
+                        | "icon_jpg.gif"
+                        | "icon_mv.gif"
+                        | "icon_mp3.gif"
+                        | "icon_psd.gif"
+                        | "icon_default.png"
+                )
+        })
 }
 
 pub fn clean_sentinel(input: &str) -> String {

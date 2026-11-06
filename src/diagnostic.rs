@@ -5,9 +5,11 @@ use thiserror::Error;
 
 mod details;
 mod note;
+mod topic;
 mod warning;
 pub use details::Details;
 pub use note::NoteKind;
+pub use topic::{topics, Topic, NAMES as TOPIC_NAMES};
 pub use warning::WarningKind;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Error)]
@@ -30,16 +32,6 @@ impl DiagnosticKind {
             Self::Warning(kind) => kind.code(),
             Self::Note(kind) => kind.code(),
         }
-    }
-    pub fn always_detailed(self) -> bool {
-        matches!(
-            self,
-            Self::Warning(
-                WarningKind::ImageDownload
-                    | WarningKind::AttachmentDownload
-                    | WarningKind::DecodeReplacement
-            )
-        )
     }
 }
 #[derive(Debug, Clone)]
@@ -106,7 +98,9 @@ mod tests {
     }
     #[test]
     fn diagnostic_codes_are_unique_and_unknown_kinds_fail() {
-        let kinds: [DiagnosticKind; 51] = [
+        let kinds: [DiagnosticKind; 56] = [
+            NoteKind::IgnoredStyle.into(),
+            NoteKind::AttachmentLabel.into(),
             WarningKind::UnknownEncoding.into(),
             WarningKind::DecodeReplacement.into(),
             WarningKind::ContentIntegrityMismatch.into(),
@@ -158,6 +152,9 @@ mod tests {
             NoteKind::ExplainHint.into(),
             NoteKind::EditorBookmark.into(),
             NoteKind::CodeWhitespace.into(),
+            NoteKind::PaginationStyle.into(),
+            NoteKind::StaticField.into(),
+            NoteKind::ListStyle.into(),
         ];
         let codes: std::collections::BTreeSet<_> = kinds.iter().map(|kind| kind.code()).collect();
         assert_eq!(codes.len(), kinds.len());

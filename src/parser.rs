@@ -128,7 +128,23 @@ fn collect_assets(
             if let Some(mut attachment) = crate::attachment::identify(link, href) {
                 attachment["href"] =
                     serde_json::json!(rules::absolute_url(base_url.as_ref(), href));
-                attachment["text"] = serde_json::json!(rules::text(link));
+                attachment["text"] =
+                    serde_json::json!(crate::attachment::empty_link_label(link)
+                        .unwrap_or_else(|| rules::text(link)));
+                if let Some(label) = crate::attachment::empty_link_label(link) {
+                    ir.warnings.push(Diagnostic::new(
+                        NoteKind::AttachmentLabel,
+                        Details {
+                            original: serde_json::json!(rules::text(link)),
+                            value: serde_json::json!(label),
+                            inferred: Some(true),
+                            confidence: Some("high".into()),
+                            reason: Some("链接没有显示文字，使用原有附件标题".into()),
+                            source_nodes: vec![snapshot.element_id(link).to_owned()],
+                            ..Default::default()
+                        },
+                    ));
+                }
                 attachment["source_nodes"] = serde_json::json!([snapshot.element_id(link)]);
                 if attachment["attributes"]["sudyfile_raw"].is_string()
                     && attachment["attributes"]["sudyfile_json"].is_null()
@@ -256,6 +272,7 @@ fn collect_candidates<'a>(
     ) {
         if pending.iter().any(|run| {
             run.image.is_some()
+                || run.link.is_some()
                 || run.line_break
                 || run
                     .text

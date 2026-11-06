@@ -76,7 +76,10 @@ pub fn choose(
                 "图片内容类型为 {detected}"
             )));
         }
-        if (mime.starts_with("image/") || mime == "application/pdf") && mime != detected {
+        if (mime.starts_with("image/") || mime == "application/pdf")
+            && mime != detected
+            && !(mime.starts_with("image/") && detected.starts_with("image/"))
+        {
             return Err(AssetError::ContentType(format!(
                 "响应声明 {mime}，文件签名为 {detected}"
             )));
@@ -132,14 +135,35 @@ pub fn choose(
     Ok(Format {
         extension: extension.into(),
         detected_type,
-        adjustment: (extension != proposed)
-            .then(|| format!("扩展名从 {proposed} 调整为 {extension}；内容类型 {detected_type}")),
+        adjustment: if !mime.is_empty() && mime.starts_with("image/") && mime != detected_type {
+            Some(format!(
+                "响应声明 {mime}，按文件内容 {detected_type} 保存；扩展名 {extension}"
+            ))
+        } else {
+            (extension != proposed).then(|| {
+                format!("扩展名从 {proposed} 调整为 {extension}；内容类型 {detected_type}")
+            })
+        },
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn image_mime_mismatches_use_the_detected_format() {
+        for (bytes, mime, name, ext) in [
+            (&b"\xff\xd8\xffimage"[..], "image/png", "image.png", "jpg"),
+            (&b"\xff\xd8\xffimage"[..], "image/png", "image.jpg", "jpg"),
+            (&b"\x89PNG\r\n\x1a\n"[..], "image/jpeg", "image.jpg", "png"),
+        ] {
+            let format = choose(bytes, true, Some(mime), name).unwrap();
+            assert_eq!(format.extension, ext);
+            assert!(format.adjustment.unwrap().contains(mime));
+        }
+        assert!(choose(b"<html>error</html>", true, Some("image/png"), "a.png").is_err());
+        assert!(choose(b"\xff\xd8\xffimage", true, Some("text/html"), "a.jpg").is_err());
+    }
     #[test]
     fn preserves_office_containers_and_arbitrary_data_extensions() {
         for ext in ["docx", "xlsx", "pptx", "epub", "zip"] {

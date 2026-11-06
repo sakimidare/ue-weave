@@ -159,6 +159,11 @@ pub(crate) fn block_html(block: &Block) -> String {
                 attrs.push_str(" reversed");
             }
             if let Some(style) = &list.style {
+                let style = match style.as_str() {
+                    "dot" => "disc",
+                    "dash" => "\"– \"",
+                    _ => style.as_str(),
+                };
                 if crate::style_registry::value("list-style-type", style) {
                     attrs.push_str(&format!(
                         " style=\"list-style-type:{}\"",

@@ -251,6 +251,14 @@ pub(crate) fn visit_node(
         return;
     }
     let context = context.for_element(element);
+    let start = output.len();
+    if let Some(label) = crate::attachment::empty_link_label(element) {
+        let mut run = text_run(&label, &context).expect("nonempty attachment title");
+        run.source_nodes = snapshot_node(snapshot, element.id());
+        run.source = "inferred".into();
+        output.push(run);
+        return;
+    }
     for child in element.children() {
         if let Some(child_element) = ElementRef::wrap(child) {
             if matches!(child_element.value().name(), "img" | "v:imagedata") {
@@ -266,6 +274,14 @@ pub(crate) fn visit_node(
                 output.push(run);
             }
         }
+    }
+    if element.value().name() == "a" && start == output.len() && context.link.is_some() {
+        output.push(Run {
+            link: context.link.clone(),
+            source_nodes: snapshot_node(snapshot, element.id()),
+            source: "original".into(),
+            ..Default::default()
+        });
     }
 }
 

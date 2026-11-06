@@ -4,6 +4,10 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 /// 读取、解析、网络请求和导出阶段的错误。
 pub enum RecoverError {
+    #[error("网站限制访问：{message}")]
+    AccessRestricted { message: String },
+    #[error("原网页正文为空：{selector}")]
+    EmptyContent { selector: String },
     #[error("没有找到编号 {code} 的解释。示例：ue-weave --explain N0002")]
     UnknownDiagnosticCode { code: String },
     #[error(transparent)]
@@ -30,6 +34,8 @@ pub enum RecoverError {
     Arguments(String),
     #[error("HTTP header 配置错误：{0}")]
     Header(String),
+    #[error("日志开关无效：{0}")]
+    LogFilter(String),
     #[error("读取本地 HTML 文件失败：{path}: {source}")]
     ReadInput {
         path: PathBuf,
@@ -106,6 +112,8 @@ impl AssetError {
 impl RecoverError {
     pub fn code(&self) -> &'static str {
         match self {
+            Self::AccessRestricted { .. } => "E0015",
+            Self::EmptyContent { .. } => "E0016",
             Self::UnknownDiagnosticCode { .. } => "E0011",
             Self::SourceNode(error) => error.code(),
             Self::Network(error) => error.kind.code(),
@@ -113,6 +121,7 @@ impl RecoverError {
             Self::Config { .. } => "E0003",
             Self::Arguments(_) => "E0001",
             Self::Header(_) => "E0014",
+            Self::LogFilter(_) => "E0017",
             Self::ReadIr { .. } => "E0012",
             Self::InvalidIr { .. } => "E0004",
             Self::ReadInput { .. } => "E0005",
@@ -260,8 +269,15 @@ mod tests {
     #[test]
     fn distinct_error_categories_have_unique_explained_codes() {
         let errors = [
+            RecoverError::AccessRestricted {
+                message: String::new(),
+            },
+            RecoverError::EmptyContent {
+                selector: String::new(),
+            },
             RecoverError::Arguments(String::new()),
             RecoverError::Header(String::new()),
+            RecoverError::LogFilter(String::new()),
             RecoverError::ReadConfig {
                 path: PathBuf::new(),
                 source: io::Error::other("读取失败"),

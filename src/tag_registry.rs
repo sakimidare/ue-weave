@@ -13,9 +13,11 @@ pub fn handling(tag: &str) -> Handling {
     match tag {
         "p" | "li" | "ul" | "ol" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "table"
         | "blockquote" | "pre" | "hr" | "dl" | "dt" | "dd" => Handling::Block,
-        "span" | "strong" | "b" | "em" | "i" | "u" | "s" | "strike" | "del" | "sup" | "sub"
-        | "font" | "br" | "a" | "img" | "code" | "kbd" | "samp" | "var" | "thead" | "tbody"
-        | "tfoot" | "tr" | "td" | "th" | "caption" | "col" | "colgroup" => Handling::Inline,
+        "sdfield" | "span" | "strong" | "b" | "em" | "i" | "u" | "s" | "strike" | "del" | "sup"
+        | "sub" | "font" | "br" | "a" | "img" | "code" | "kbd" | "samp" | "var" | "thead"
+        | "tbody" | "tfoot" | "tr" | "td" | "th" | "caption" | "col" | "colgroup" => {
+            Handling::Inline
+        }
         "div" | "section" | "article" | "header" | "footer" | "main" | "aside" | "nav"
         | "center" | "noscript" => Handling::Container,
         "figure" | "figcaption" | "address" | "fieldset" | "legend" | "details" | "summary"

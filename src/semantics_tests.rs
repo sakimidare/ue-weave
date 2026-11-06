@@ -11,6 +11,48 @@ fn parse(source: &str) -> Ir {
 }
 
 #[test]
+fn crawl_regressions_preserve_fields_and_markers_with_accurate_diagnostics() {
+    let ir = parse(include_str!("../fixtures/crawl-regressions.html"));
+    assert_eq!(ir.images.len(), 0);
+    assert_eq!(ir.attachments.len(), 2);
+    assert_eq!(ir.metadata["resource_integrity"]["value"], "matched");
+    assert_eq!(ir.metadata["content_integrity"]["value"], "matched");
+    for code in ["N0033", "N0034", "N0035", "N0036", "N0007"] {
+        assert!(ir.warnings.iter().any(|w| w.kind.code() == code), "{code}");
+    }
+    for code in ["W0009", "W0010", "W0018"] {
+        assert!(!ir.warnings.iter().any(|w| w.kind.code() == code), "{code}");
+    }
+    let unmapped: Vec<_> = ir
+        .warnings
+        .iter()
+        .filter(|w| w.kind.code() == "W0014")
+        .collect();
+    assert_eq!(unmapped.len(), 1);
+    assert_eq!(
+        serde_json::to_value(unmapped[0]).unwrap()["attribute"],
+        "white-space"
+    );
+    for profile in [
+        crate::profile::Profile::Conservative,
+        crate::profile::Profile::Balanced,
+        crate::profile::Profile::Aggressive,
+    ] {
+        let output = crate::profile::prepare_documents(&ir, profile.settings());
+        let html = crate::renderer::render(&output.ir);
+        assert!(html.contains("页码 3"));
+        assert!(html.contains("只有图标的附件.docx"));
+        assert!(html.contains("href=\"https://example.edu/empty-link\""));
+        assert!(html.contains("list-style-type:disc"));
+        assert!(html.contains("list-style-type:&quot;– &quot;"));
+        assert!(!html.contains("icon_xls"));
+        let typst = crate::typst::render(&output.ir);
+        assert!(typst.contains("marker: [#text(\"•\")]"));
+        assert!(typst.contains("marker: [#text(\"–\")]"));
+    }
+}
+
+#[test]
 fn code_preserves_literal_content_and_language_in_all_exports() {
     let ir = parse(include_str!("../fixtures/ueditor-semantics.html"));
     let block = &ir.blocks[0];

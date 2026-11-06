@@ -8,6 +8,117 @@ use std::{
 };
 
 #[test]
+fn quiet_suppresses_retry_notes_and_network_topic_restores_them() {
+    let page = "<div class='Article_Content'><p>正文</p></div>";
+    for (label, quiet, expect_retry) in [("quiet", true, false), ("explicit", false, true)] {
+        let (url, server) = serve(vec![(503, "".into()), (200, page.into())]);
+        let dir =
+            std::env::temp_dir().join(format!("ue-http-retry-log-{}-{label}", std::process::id()));
+        let mut command = Command::new(env!("CARGO_BIN_EXE_ue-weave"));
+        command
+            .arg(&url)
+            .args([
+                "--allow-private-network",
+                "--retries",
+                "1",
+                "--timeout",
+                "2",
+                "--formats",
+                "json",
+                "--color",
+                "never",
+            ])
+            .arg("--output")
+            .arg(&dir)
+            .env("NO_PROXY", "127.0.0.1")
+            .env("no_proxy", "127.0.0.1");
+        if quiet {
+            command.arg("--quiet");
+        } else {
+            command.args(["--log", "network=list"]);
+        }
+        let result = command.output().unwrap();
+        assert!(result.status.success(), "{label}");
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        assert_eq!(stderr.contains("retry:"), expect_retry, "{label}: {stderr}");
+        assert_eq!(server.join().unwrap(), 2);
+        let _ = fs::remove_dir_all(dir);
+    }
+}
+
+#[test]
+fn fixed_address_preserves_host_and_downloads_mislabeled_images() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    listener.set_nonblocking(true).unwrap();
+    let server = thread::spawn(move || {
+        let bodies: [&[u8]; 2] = [
+            b"<div class='Article_Content'><img src='/photo.png'></div>",
+            b"\xff\xd8\xffjpeg-data",
+        ];
+        for (index, body) in bodies.iter().enumerate() {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            let mut stream = loop {
+                if let Ok((stream, _)) = listener.accept() {
+                    break stream;
+                }
+                assert!(Instant::now() < deadline, "请求未到达");
+                thread::sleep(Duration::from_millis(10));
+            };
+            stream
+                .set_read_timeout(Some(Duration::from_secs(2)))
+                .unwrap();
+            let mut buffer = [0; 4096];
+            let n = stream.read(&mut buffer).unwrap();
+            let request = String::from_utf8_lossy(&buffer[..n]);
+            assert!(request
+                .to_lowercase()
+                .contains(&format!("host: campus.example:{port}")));
+            let mime = if index == 0 { "text/html" } else { "image/png" };
+            write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: {mime}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",body.len()).unwrap();
+            stream.write_all(body).unwrap();
+        }
+    });
+    let dir = tempfile::tempdir().unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_ue-weave"))
+        .arg(format!("http://campus.example:{port}/page.htm"))
+        .args([
+            "--resolve",
+            "campus.example=127.0.0.1",
+            "--allow-private-network",
+            "--download-images",
+            "--json",
+            "--output",
+        ])
+        .arg(dir.path())
+        .output()
+        .unwrap();
+    server.join().unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(report["image_errors"].as_array().unwrap().len(), 0);
+    assert!(report["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|w| w["code"] == "W0015"));
+    let html = fs::read_to_string(dir.path().join("reconstructed.html")).unwrap();
+    assert!(html.contains("images/"));
+    assert!(html.contains(".jpg"));
+    let image = fs::read_dir(dir.path().join("images"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    assert_eq!(fs::read(image).unwrap(), b"\xff\xd8\xffjpeg-data");
+}
+
+#[test]
 fn custom_headers_stay_on_the_input_origin() {
     for redirect in [false, true] {
         let source = TcpListener::bind("127.0.0.1:0").unwrap();

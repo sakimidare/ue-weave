@@ -2,6 +2,18 @@
 
 [返回首页](../README.md)
 
+保存的网页可指定原网址，以补全图片、附件和链接：
+
+```sh
+ue-weave --input page.html --source-url https://jwc.seu.edu.cn/2024/0108/c21681a478415/page.htm --output output/
+```
+
+校园网络解析不稳定时，可固定已确认的连接地址。HTTPS 仍使用原域名校验证书：
+
+```sh
+ue-weave URL --resolve jwc.seu.edu.cn=10.64.84.122 --allow-private-network --output output/
+```
+
 ## 输出预设
 
 `--profile` 接受 `conservative`、`balanced`、`aggressive`，也接受中文名称 `保守`、`均衡`、`激进`。
@@ -88,7 +100,9 @@ ue-weave --input page.html --output output/ \
 | `--include-metadata` | 在导出文档顶部显示文章元数据 |
 | `--no-inference` | 关闭启发式推断 |
 | `--json` | 以 JSON 输出运行结果摘要 |
-| `--verbose` | 输出详细阶段日志 |
+| `--verbose` | 输出详细阶段日志；等价于 `--log all=context` |
+| `--quiet` | 只输出错误；等价于 `--log all=off` |
+| `--log <[TOPIC=]LEVEL>` | 日志开关，可重复或用逗号分隔 |
 | `--color <MODE>` | 日志颜色：auto 自动（默认）、always 始终、never 关闭 |
 
 header 文件格式为 JSON 对象，例如：
@@ -101,6 +115,60 @@ header 文件格式为 JSON 对象，例如：
 ```
 
 命令行 header 与文件中的 header 合并；同名 header 后出现的值覆盖前面的值。自定义 header 只发送到与输入网址协议、主机和端口相同的地址，每次重定向也会检查。使用本地 HTML 输入时，自定义 header 不发送。header 值不会写入报告。
+
+## 日志开关
+
+`--log` 接受 `[topic[.severity]=]level`，可重复，也可用逗号分隔：
+
+```sh
+ue-weave URL -o out --log image=list --log attachment=list
+ue-weave URL -o out --log style.warning=list
+ue-weave URL -o out --log style.note=off,network=list
+ue-weave URL -o out --log W0014=list
+```
+
+领域描述“问题出在网页的哪一部分”，级别描述“输出多细”，两者可以单独使用，也可以用 `领域.严重度` 组合。
+
+级别：
+
+| 级别 | 输出 |
+| --- | --- |
+| `off` | 不输出 |
+| `summary` | 按编号聚合计数（warning 默认） |
+| `list` | 逐条显示详情（地址、属性等），不含 HTML 上下文 |
+| `context` | 每条附 HTML 片段与输出文字对照（`--verbose` 的效果） |
+
+领域：
+
+| 领域 | 覆盖 |
+| --- | --- |
+| `progress` | Reading / Fetching / Parsing / Writing / Finished |
+| `network` | 网络重试 |
+| `encoding` | 编码识别与解码替换 |
+| `image` | 图片下载、图片尺寸、VML 图片 |
+| `attachment` | 附件下载、附件属性、附件图标、附件标题补全、内嵌 PDF |
+| `style` | 样式过滤、映射、跳过、表格与列表样式 |
+| `structure` | 空元素、空段落、排除元素、嵌套限制、文档字段 |
+| `integrity` | 正文与资源完整性 |
+| `inference` | 标题、署名推断 |
+| `word` | Word 与编辑器残留 |
+
+额外的选择器：
+
+| 写法 | 含义 |
+| --- | --- |
+| `all` | 全部诊断与进度行 |
+| `warning`、`note` | 按严重度选择全部领域 |
+| `W0014`、`N0037` | 单个编号 |
+| `list`（省略类别） | 等价于 `all=list` |
+
+优先级：**编号 > 领域.严重度 > 领域 > `warning`/`note` > `all`**；同一优先级下后写的覆盖先写的。
+
+默认级别：warning 为 `summary`；带地址或位置的编号（`W0002`、`W0003`、`W0004`、`W0005`、`W0006`、`W0015`）为 `list`；其余 note 为 `off`。运行时提示 `N0028`（重试）、`N0029`（查看详情）、`N0030`（解释提示）默认显示，可用 `note=off`、`N0030=off` 或 `--quiet` 关闭。进度行默认关闭。错误始终输出，不受日志开关影响。
+
+`--quiet` 等于 `--log all=off`，`--verbose` 等于 `--log all=context`。这两个开关互斥，同时使用会报错；需要组合效果时改用 `--log`，例如 `--quiet --log note=list` 只显示提示。
+
+日志开关只影响终端输出，不改变 `--json` 结果、`report.json` 内容和退出码。
 
 ## 站点选择器配置
 

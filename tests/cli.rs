@@ -2,6 +2,53 @@ mod common;
 use std::fs;
 
 #[test]
+fn local_source_url_resolves_resources_and_invalid_network_options_fail() {
+    let dir = common::directory();
+    let input = dir.path().join("page.html");
+    fs::write(
+        &input,
+        "<div class='Article_Content'><a href='../file.pdf'>附件</a><img src='/image.png'></div>",
+    )
+    .unwrap();
+    let result = common::command()
+        .args(["--input"])
+        .arg(&input)
+        .args([
+            "--source-url",
+            "https://example.org/news/page.html",
+            "--formats",
+            "html,json",
+            "--output",
+        ])
+        .arg(dir.path().join("out"))
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let html = fs::read_to_string(dir.path().join("out/reconstructed.html")).unwrap();
+    assert!(html.contains("https://example.org/file.pdf"));
+    assert!(html.contains("https://example.org/image.png"));
+    for args in [
+        vec!["--source-url", "javascript:x"],
+        vec!["--resolve", "bad"],
+        vec!["--resolve", "example.org=127.0.0.1"],
+    ] {
+        let result = common::command()
+            .arg("https://example.org/")
+            .args(args)
+            .arg("--output")
+            .arg(dir.path().join("fail"))
+            .output()
+            .unwrap();
+        assert!(!result.status.success());
+        assert!(String::from_utf8_lossy(&result.stderr).contains("E0001"));
+    }
+}
+
+#[test]
 fn explain_hint_finishes_warning_and_error_output_once() {
     let temporary = common::directory();
     let input = temporary.path().join("page.html");

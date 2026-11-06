@@ -3,9 +3,12 @@ use anstyle::{AnsiColor, Style};
 use std::io::Write;
 
 mod context;
+mod filter;
 mod layout;
 mod output_context;
 mod render;
+
+pub use filter::{Filter, Level};
 
 #[derive(Clone, Copy, Debug, Default, clap::ValueEnum)]
 pub enum Color {
@@ -39,7 +42,7 @@ impl Color {
 }
 
 pub struct Logger {
-    verbose: bool,
+    filter: Filter,
     stream: std::cell::RefCell<anstream::AutoStream<std::io::Stderr>>,
     width: usize,
 }
@@ -56,20 +59,30 @@ impl Logger {
                 ..Default::default()
             },
         );
-        self.emit(&detail(&diagnostic, &[]));
+        self.emit_enabled(&diagnostic);
+    }
+    /// 只在诊断未被过滤时输出，供运行时提示和重试信息使用。
+    fn emit_enabled(&self, diagnostic: &Diagnostic) {
+        if self.filter.level(diagnostic.kind) == Level::Off {
+            return;
+        }
+        self.emit(&detail(diagnostic, &[]));
     }
     #[cfg(test)]
     pub fn new(verbose: bool) -> Self {
-        Self::with_color(verbose, Color::Auto)
+        Self::with_filter(
+            Filter::from_specs(&[], false, verbose).unwrap(),
+            Color::Auto,
+        )
     }
-    pub fn with_color(verbose: bool, color: Color) -> Self {
+    pub fn with_filter(filter: Filter, color: Color) -> Self {
         Self {
-            verbose,
+            filter,
             stream: std::cell::RefCell::new(anstream::AutoStream::new(
                 std::io::stderr(),
                 color.choice(),
             )),
-            width: if verbose { layout::width() } else { 120 },
+            width: layout::width(),
         }
     }
     fn emit(&self, text: &str) {
@@ -83,6 +96,9 @@ impl Logger {
         self.explain_hint(error.code());
     }
     fn explain_hint(&self, code: &str) {
+        if self.filter.level(NoteKind::ExplainHint.into()) == Level::Off {
+            return;
+        }
         self.emit(&format!(
             "hint[{}]: 运行 `ue-weave --explain {code}` 查看解释和处理方法。\n",
             NoteKind::ExplainHint.code()
@@ -90,16 +106,17 @@ impl Logger {
     }
     pub fn finish_diagnostics(&self, diagnostics: &[Diagnostic]) {
         if let Some(warning) = diagnostics.iter().find(|diagnostic| {
-            matches!(
-                diagnostic.kind,
-                crate::diagnostic::DiagnosticKind::Warning(_)
-            )
+            self.filter.level(diagnostic.kind) != Level::Off
+                && matches!(
+                    diagnostic.kind,
+                    crate::diagnostic::DiagnosticKind::Warning(_)
+                )
         }) {
             self.explain_hint(warning.kind.code());
         }
     }
     pub fn stage(&self, name: &str, message: impl AsRef<str>) {
-        if self.verbose {
+        if self.filter.progress() != Level::Off {
             let label = match name {
                 "input" | "input-ir" => "Reading",
                 "request" => "Fetching",
@@ -133,42 +150,46 @@ impl Logger {
         if warnings.is_empty() {
             return;
         }
-        let mut counts = std::collections::BTreeMap::new();
-        let context = self.verbose.then(|| context::Context::new(nodes));
+        let levels: Vec<Level> = warnings
+            .iter()
+            .map(|warning| self.filter.level(warning.kind))
+            .collect();
+        if levels.iter().all(|level| *level == Level::Off) {
+            return;
+        }
+        let context = levels
+            .contains(&Level::Context)
+            .then(|| context::Context::new(nodes));
         let output_context = context
             .as_ref()
             .map(|context| output_context::OutputContext::new(output, context));
-        for warning in warnings {
-            let kind = warning.kind;
-            if !self.verbose && kind.level() == "note" {
-                continue;
-            }
-            *counts.entry(kind).or_insert(0usize) += 1;
-            if self.verbose || kind.always_detailed() {
-                if let Some(context) = &context {
-                    self.write(&render::diagnostic(
-                        warning,
-                        context,
-                        output_context.as_ref().unwrap(),
-                        self.width,
-                    ));
-                } else {
-                    self.emit(&detail(warning, nodes));
+        let mut counts = std::collections::BTreeMap::new();
+        for (warning, level) in warnings.iter().zip(&levels) {
+            match level {
+                Level::Off => {}
+                Level::Summary => {
+                    *counts.entry(warning.kind).or_insert(0usize) += 1;
                 }
+                Level::List => self.emit(&detail(warning, nodes)),
+                Level::Context => match (&context, &output_context) {
+                    (Some(context), Some(output)) => {
+                        self.write(&render::diagnostic(warning, context, output, self.width))
+                    }
+                    _ => self.emit(&detail(warning, nodes)),
+                },
             }
         }
-        if !self.verbose && !counts.is_empty() {
+        if !counts.is_empty() {
             for (kind, count) in counts {
-                if !kind.always_detailed() {
-                    self.emit(&format!("warning[{}]: {kind}（{count} 处）\n", kind.code()));
-                }
+                self.emit(&format!(
+                    "{}[{}]: {kind}（{count} 处）\n",
+                    kind.level(),
+                    kind.code()
+                ));
             }
-            self.emit(&detail(
-                &crate::diagnostic::Diagnostic::new(
-                    crate::diagnostic::NoteKind::VerboseHint,
-                    crate::diagnostic::Details::default(),
-                ),
-                &[],
+            self.emit_enabled(&crate::diagnostic::Diagnostic::new(
+                crate::diagnostic::NoteKind::VerboseHint,
+                crate::diagnostic::Details::default(),
             ));
         }
     }

@@ -1,6 +1,30 @@
 use scraper::{ElementRef, Selector};
 use serde_json::{json, Value};
 
+pub fn empty_link_label(element: ElementRef) -> Option<String> {
+    if element.value().name() != "a" || !crate::rules::text(element).trim().is_empty() {
+        return None;
+    }
+    let href = element.value().attr("href")?;
+    if !crate::safety::safe_url(href, false)
+        || element
+            .select(&Selector::parse("img").unwrap())
+            .any(|image| !crate::rules::attachment_icon(image))
+    {
+        return None;
+    }
+    identify(element, href)?;
+    element
+        .value()
+        .attr("sudyfile-attr")
+        .and_then(parse_metadata)
+        .and_then(|value| value["title"].as_str().map(str::to_owned))
+        .or_else(|| element.value().attr("title").map(str::to_owned))
+        .or_else(|| element.value().attr("download").map(str::to_owned))
+        .map(|title| crate::rules::clean_sentinel(&title))
+        .filter(|title| !title.trim().is_empty())
+}
+
 pub fn embedded_pdf(element: ElementRef) -> Option<(String, String)> {
     if !matches!(element.value().name(), "span" | "div") {
         return None;

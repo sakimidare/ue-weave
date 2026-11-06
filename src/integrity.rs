@@ -27,6 +27,9 @@ fn visible_text(root: ElementRef) -> String {
             if let Some((_, title)) = crate::attachment::embedded_pdf(element) {
                 text.push_str(&title);
             }
+            if let Some(title) = crate::attachment::empty_link_label(element) {
+                text.push_str(&title);
+            }
         }
         if let Node::Text(value) = node.value() {
             let excluded = node
@@ -57,7 +60,7 @@ pub fn check(root: ElementRef, ir: &mut crate::model::Ir) {
     let evidence = serde_json::json!({
         "value": if matches {"matched"} else {"mismatch"},
         "confidence": "high",
-        "reason": "对比正文文字、PDF 占位元素的附件标题与重建 HTML 的非空白文字顺序；跳过可执行节点及已知异常字符串，空白和结构另行记录",
+        "reason": "对比正文文字、PDF 及无文字附件链接的原有标题与重建 HTML 的非空白文字顺序；空白和结构另行记录",
         "source_nodes": ["n0"],
         "original_characters": original.chars().count(),
         "reconstructed_characters": reconstructed.chars().count(),

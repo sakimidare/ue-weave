@@ -24,12 +24,11 @@ fn write(path: &Path, bytes: &[u8]) -> Result<()> {
 
 pub fn run(path: &Path, args: &crate::cli::Args, output: &Path) -> Result<()> {
     let json = args.json;
-    let verbose = args.verbose;
     let profile = args.profile;
     let settings = args.output_options.resolve(profile);
     let asset_root = args.asset_root.as_deref();
     let exports = &args.exports;
-    let logger = crate::log::Logger::with_color(verbose, args.color);
+    let logger = crate::log::Logger::with_filter(args.log_filter()?, args.color);
     logger.stage("input-ir", format!("读取 {}", path.display()));
     let mut ir: Ir = crate::ir_format::read(&read(path)?, path)?;
     let directory = path.parent().unwrap_or(Path::new("."));

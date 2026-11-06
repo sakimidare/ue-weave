@@ -21,16 +21,27 @@ struct Network {
 impl Network {
     fn new(args: &Args) -> Result<Self> {
         let headers = load_headers(args)?;
-        let mut client = network_policy::client(
+        if !args.allow_private_network
+            && args
+                .resolve
+                .iter()
+                .any(|(_, ip)| !network_policy::public_ip(*ip))
+        {
+            return Err(RecoverError::Arguments(
+                "固定地址属于校内或保留网段，请添加 --allow-private-network".into(),
+            ));
+        }
+        let mut client = network_policy::client_with_addresses(
             Duration::from_secs(args.timeout),
             args.allow_private_network,
             headers,
+            &args.resolve,
         )
         .map_err(|source| RecoverError::Request {
             url: args.url.clone().unwrap_or_default(),
             source,
         })?;
-        client.set_origin(args.url.as_deref());
+        client.set_origin(args.url.as_deref().or(args.source_url.as_deref()));
         Ok(Self {
             client,
             policy: network::Policy {
@@ -154,7 +165,11 @@ fn parse(input: input::Input, args: &Args, logger: &Logger) -> Result<Parsed> {
         &document,
         &selector,
         args.no_inference,
-        Some(input.source.clone()),
+        Some(
+            args.source_url
+                .clone()
+                .unwrap_or_else(|| input.source.clone()),
+        ),
     )?;
     settings.apply_metadata(&document, &mut ir.metadata);
     ir.warnings.extend(input.warnings);
@@ -259,6 +274,8 @@ pub(crate) fn run(args: &Args) -> Result<()> {
         .ok_or_else(|| RecoverError::Arguments("请用 --output 指定输出目录".into()))?;
     if let Some(path) = &args.input_ir {
         if args.url.is_some()
+            || args.source_url.is_some()
+            || !args.resolve.is_empty()
             || args.input.is_some()
             || args.download_images
             || args.download_attachments
@@ -273,7 +290,7 @@ pub(crate) fn run(args: &Args) -> Result<()> {
         return regenerate::run(path, args, output);
     }
     let source = Source::from_args(args)?;
-    let logger = Logger::with_color(args.verbose, args.color);
+    let logger = Logger::with_filter(args.log_filter()?, args.color);
     let network =
         (matches!(source, Source::Url(_)) || args.download_images || args.download_attachments)
             .then(|| Network::new(args))

@@ -21,6 +21,12 @@ pub(crate) struct Args {
     /// 读取本地 HTML 文件。
     #[arg(long, value_name = "FILE", help_heading = "输入与正文")]
     pub(crate) input: Option<PathBuf>,
+    /// 本地 HTML 的原网页网址，用于补全链接和元数据。
+    #[arg(long, requires = "input", value_name = "URL", value_parser = source_url, help_heading = "输入与正文")]
+    pub(crate) source_url: Option<String>,
+    /// 固定域名的连接地址，可重复，例如 jwc.seu.edu.cn=10.64.84.122。
+    #[arg(long, value_name = "HOST=IP", value_parser = crate::network_policy::parse_address, help_heading = "资源与网络")]
+    pub(crate) resolve: Vec<(String, std::net::IpAddr)>,
     /// 从 JSON 正文生成文档。
     #[arg(long, value_name = "FILE", help_heading = "输入与正文")]
     pub(crate) input_ir: Option<PathBuf>,
@@ -65,9 +71,19 @@ pub(crate) struct Args {
     /// 关闭标题、署名和缩进推断。
     #[arg(long, help_heading = "输入与正文")]
     pub(crate) no_inference: bool,
-    /// 显示详细日志。
+    /// 显示详细日志；等价于 --log all=context。
     #[arg(long, help_heading = "运行信息")]
     pub(crate) verbose: bool,
+    /// 只输出错误；等价于 --log all=off。
+    #[arg(long, conflicts_with = "verbose", help_heading = "运行信息")]
+    pub(crate) quiet: bool,
+    /// 日志开关，可重复或用逗号分隔：[topic[.severity]=]level，例如 style=list、style.warning=off。
+    #[arg(
+        long,
+        value_name = "[TOPIC[.SEVERITY]=]LEVEL",
+        help_heading = "运行信息"
+    )]
+    pub(crate) log: Vec<String>,
     /// 日志颜色：auto 自动、always 始终、never 关闭。
     #[arg(long, value_enum, default_value_t = log::Color::Auto, help_heading = "运行信息")]
     pub(crate) color: log::Color,
@@ -87,6 +103,19 @@ pub(crate) struct Args {
     pub(crate) output_options: profile::Overrides,
     #[command(flatten)]
     pub(crate) exports: export::Options,
+}
+
+fn source_url(value: &str) -> Result<String, String> {
+    let url = url::Url::parse(value).map_err(|e| e.to_string())?;
+    crate::network_policy::check_url(&url, true).map_err(|e| e.to_string())?;
+    Ok(url.into())
+}
+
+impl Args {
+    pub(crate) fn log_filter(&self) -> crate::error::Result<log::Filter> {
+        log::Filter::from_specs(&self.log, self.quiet, self.verbose)
+            .map_err(crate::error::RecoverError::LogFilter)
+    }
 }
 
 /// 运行命令行程序，并按执行结果设置进程退出状态。
@@ -111,17 +140,50 @@ pub fn main() {
             // error presentation, so inspect their raw argv spelling instead.
             let json = raw_bool_flag(&argv, "json");
             let color = raw_color_option(&argv).unwrap_or_default();
+            let filter = raw_log_filter(&argv);
             let message = error.to_string();
             let error =
                 RecoverError::Arguments(message.trim_start_matches("error: ").trim().into());
-            report_error(&error, json, false, color);
+            report_error(&error, json, &filter, color);
             std::process::exit(2);
         }
     };
     if let Err(error) = pipeline::run(&args) {
-        report_error(&error, args.json, args.verbose, args.color);
+        let filter = args.log_filter().unwrap_or_default();
+        report_error(&error, args.json, &filter, args.color);
         std::process::exit(1);
     }
+}
+
+/// 参数解析失败时尽力读取 `--log`、`--quiet`、`--verbose`，只影响错误提示。
+fn raw_log_filter(argv: &[std::ffi::OsString]) -> log::Filter {
+    let mut specs = Vec::new();
+    let mut quiet = false;
+    let mut verbose = false;
+    let mut args = argv.iter().skip(1);
+    while let Some(arg) = args.next() {
+        let Some(value) = arg.to_str() else {
+            continue;
+        };
+        if value == "--" {
+            break;
+        }
+        match value {
+            "--quiet" => quiet = true,
+            "--verbose" => verbose = true,
+            "--log" => {
+                if let Some(spec) = args.next().and_then(|value| value.to_str()) {
+                    specs.push(spec.to_owned());
+                }
+            }
+            _ => {
+                if let Some(spec) = value.strip_prefix("--log=") {
+                    specs.push(spec.to_owned());
+                }
+            }
+        }
+    }
+    log::Filter::from_specs(&specs, quiet, verbose).unwrap_or_default()
 }
 
 fn raw_bool_flag(argv: &[std::ffi::OsString], name: &str) -> bool {
@@ -171,7 +233,7 @@ fn command() -> clap::Command {
     command.mut_arg("explain", |arg| arg.conflicts_with_all(conflicts))
 }
 
-fn report_error(error: &RecoverError, json: bool, verbose: bool, color: log::Color) {
+fn report_error(error: &RecoverError, json: bool, filter: &log::Filter, color: log::Color) {
     if json {
         println!(
             "{}",
@@ -181,5 +243,5 @@ fn report_error(error: &RecoverError, json: bool, verbose: bool, color: log::Col
             })
         );
     }
-    log::Logger::with_color(verbose, color).error(error);
+    log::Logger::with_filter(filter.clone(), color).error(error);
 }

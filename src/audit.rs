@@ -222,12 +222,39 @@ pub fn append_diagnostics(ir: &mut Ir) {
             ));
         }
         if let Some(attrs) = node["attrs"].as_object() {
+            if tag == "sdfield" {
+                ir.warnings.push(Diagnostic::new(
+                    NoteKind::StaticField,
+                    Details {
+                        original: json!(attrs),
+                        source_nodes: vec![id.as_str().unwrap_or_default().into()],
+                        reason: Some(
+                            "保留页码、日期等字段当前显示的文字，导出后按普通文字编辑".into(),
+                        ),
+                        ..Default::default()
+                    },
+                ));
+            }
             if ["ol", "ul"].contains(&tag) {
                 if let Some(class) = attrs.get("class").and_then(|value| value.as_str()) {
                     for marker in class
                         .split_whitespace()
                         .filter(|class| class.starts_with("custom_"))
                     {
+                        if matches!(marker, "custom_dot" | "custom_dash") && tag == "ul" {
+                            ir.warnings.push(Diagnostic::new(
+                                NoteKind::ListStyle,
+                                Details {
+                                    original: json!(marker),
+                                    value: json!(marker.trim_start_matches("custom_")),
+                                    ir_field: Some("blocks.list.style".into()),
+                                    reason: Some("使用文字圆点或短横线表示列表标记".into()),
+                                    source_nodes: vec![id.as_str().unwrap_or_default().into()],
+                                    ..Default::default()
+                                },
+                            ));
+                            continue;
+                        }
                         ir.warnings.push(Diagnostic::new(
                             WarningKind::CustomListMarker,
                             Details {
@@ -264,6 +291,8 @@ pub fn append_diagnostics(ir: &mut Ir) {
                                             "circle",
                                             "square",
                                             "none",
+                                            "dot",
+                                            "dash",
                                         ]
                                         .contains(&value.trim())
                                 })
@@ -564,10 +593,52 @@ pub fn append_diagnostics(ir: &mut Ir) {
                             ));
                             continue;
                         }
-                        if let Some(mapping) = crate::style_registry::common(&property) {
+                        if crate::style_registry::PAGINATION_STYLES.contains(&property.as_str()) {
+                            ir.warnings.push(Diagnostic::new(
+                                NoteKind::PaginationStyle,
+                                Details {
+                                    attribute: Some(property),
+                                    original: json!(value),
+                                    removed: Some(true),
+                                    source_nodes: vec![id.as_str().unwrap_or_default().into()],
+                                    reason: Some("导出使用目标文档的分页规则".into()),
+                                    ..Default::default()
+                                },
+                            ));
+                        } else if ["ul", "ol"].contains(&tag) && property == "list-style-type" {
+                            ir.warnings.push(Diagnostic::new(
+                                NoteKind::ListStyle,
+                                Details {
+                                    original: json!(value),
+                                    ir_field: Some("blocks.list.style".into()),
+                                    source_nodes: vec![id.as_str().unwrap_or_default().into()],
+                                    ..Default::default()
+                                },
+                            ));
+                        } else if let Some(mapping) = crate::style_registry::common(&property) {
                             ir.metadata
                                 .entry("style_mappings")
                                 .or_insert_with(|| json!({}))[&property] = json!(mapping.ir_field);
+                        } else if crate::style_registry::benign(&property)
+                            || crate::style_registry::benign_value(&property, value)
+                        {
+                            ir.warnings.push(Diagnostic::new(
+                                NoteKind::IgnoredStyle,
+                                Details {
+                                    attribute: Some((property).to_owned()),
+                                    original: serde_json::json!(value.trim()),
+                                    removed: Some(true),
+                                    ir_field: None,
+                                    inferred: Some(false),
+                                    confidence: Some("high".to_owned()),
+                                    reason: Some(
+                                        "该声明只影响浏览器中的视觉或布局，正文与资源不受影响"
+                                            .to_owned(),
+                                    ),
+                                    source_nodes: vec![id.as_str().unwrap_or_default().to_owned()],
+                                    ..Default::default()
+                                },
+                            ));
                         } else {
                             ir.warnings.push(Diagnostic::new(
                                 WarningKind::UnmappedStyle,
@@ -709,5 +780,31 @@ mod tests {
                 assert!(ir.original_nodes.iter().any(|node| node["id"] == *id));
             }
         }
+    }
+
+    #[test]
+    fn benign_layout_styles_are_notes_instead_of_warnings() {
+        let html = scraper::Html::parse_document(
+            "<div class='Article_Content'><p style='text-wrap-mode:wrap;--size:12px;padding:4px;letter-spacing:2px;color:red'>正文</p></div>",
+        );
+        let ir = crate::parser::parse(&html, ".Article_Content", false, None).unwrap();
+        for attribute in ["text-wrap-mode", "--size", "padding"] {
+            let note = ir
+                .warnings
+                .iter()
+                .find(|w| w["kind"] == "ignored-style" && w["attribute"] == attribute)
+                .unwrap_or_else(|| panic!("missing ignored-style for {attribute}"));
+            assert_eq!(note["level"], "note");
+            assert_eq!(note["removed"], true);
+        }
+        assert!(ir
+            .warnings
+            .iter()
+            .any(|w| w["kind"] == "unmapped-style" && w["attribute"] == "letter-spacing"));
+        assert!(!ir.warnings.iter().any(|w| {
+            w["level"] == "warning"
+                && ["text-wrap-mode", "--size", "padding"]
+                    .contains(&w["attribute"].as_str().unwrap_or(""))
+        }));
     }
 }

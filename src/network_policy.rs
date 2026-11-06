@@ -109,17 +109,42 @@ impl Resolve for CheckedResolver {
     }
 }
 
+#[cfg(test)]
 pub fn client(
     timeout: Duration,
     allow_private: bool,
     headers: HeaderMap,
 ) -> Result<Client, reqwest::Error> {
-    let builder = HttpClient::builder()
+    client_with_addresses(timeout, allow_private, headers, &[])
+}
+
+pub fn parse_address(value: &str) -> Result<(String, IpAddr), String> {
+    let (host, ip) = value.split_once('=').ok_or("格式应为 HOST=IP")?;
+    let parsed = url::Host::parse(host).map_err(|_| "域名无效")?;
+    if !matches!(parsed, url::Host::Domain(_))
+        || host.is_empty()
+        || host.contains(['/', ':', '@', '?', '#'])
+    {
+        return Err("HOST 需要域名，例如 jwc.seu.edu.cn".into());
+    }
+    Ok((parsed.to_string(), ip.parse().map_err(|_| "IP 地址无效")?))
+}
+
+pub fn client_with_addresses(
+    timeout: Duration,
+    allow_private: bool,
+    headers: HeaderMap,
+    addresses: &[(String, IpAddr)],
+) -> Result<Client, reqwest::Error> {
+    let mut builder = HttpClient::builder()
         .no_proxy()
         .timeout(timeout)
         .user_agent(concat!("ue-weave/", env!("CARGO_PKG_VERSION")))
         .redirect(reqwest::redirect::Policy::none())
         .dns_resolver(Arc::new(CheckedResolver { allow_private }));
+    for (host, ip) in addresses {
+        builder = builder.resolve(host, SocketAddr::new(*ip, 0));
+    }
     builder.build().map(|inner| Client {
         inner,
         headers,

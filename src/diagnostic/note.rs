@@ -4,6 +4,16 @@ use thiserror::Error;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Error)]
 #[serde(rename_all = "kebab-case")]
 pub enum NoteKind {
+    #[error("已使用附件标题补全链接文字")]
+    AttachmentLabel,
+    #[error("已跳过无输出影响的样式")]
+    IgnoredStyle,
+    #[error("已跳过页面分页样式")]
+    PaginationStyle,
+    #[error("已保留文档字段的显示文字")]
+    StaticField,
+    #[error("已读取列表样式")]
+    ListStyle,
     #[error("已移除编辑器书签")]
     EditorBookmark,
     #[error("已还原代码块空格")]
@@ -72,6 +82,11 @@ pub enum NoteKind {
 impl NoteKind {
     pub fn code(self) -> &'static str {
         match self {
+            Self::AttachmentLabel => "N0036",
+            Self::IgnoredStyle => "N0037",
+            Self::PaginationStyle => "N0033",
+            Self::StaticField => "N0034",
+            Self::ListStyle => "N0035",
             Self::EditorBookmark => "N0031",
             Self::CodeWhitespace => "N0032",
             Self::ExplainHint => "N0030",

@@ -114,6 +114,30 @@ HTTP header 名称、值或命令行的 NAME=VALUE 格式有误，或尝试覆�
 
 处理：使用 `--header 'NAME=VALUE'`，或使用 JSON 对象文件。不要设置 `Host`、`Content-Length`、`Connection` 和 `Transfer-Encoding`。
 
+## E0015 网站限制访问
+
+服务器返回访问提示页，明确要求校内网络、登录或访问权限。
+
+例子：页面显示“您当前 ip 并非校内地址，该信息仅允许校内地址访问”。
+
+处理：连接校园网络后重试。域名解析结果变化时，可用 `--resolve jwc.seu.edu.cn=校内IP --allow-private-network` 固定已确认的连接地址。网站要求登录时，使用自己已有的登录凭据。`--allow-private-network` 只允许连接私网地址。
+
+## E0016 原网页正文为空
+
+已找到正文容器，其中没有文字、链接或图片等内容。
+
+例子：服务器返回 `<article class="detail-body"><div></div></article>`，仅包含空标签。
+
+处理：打开原网页确认正文是否存在，或使用 `--selector content=CSS` 选择实际正文。空容器没有可导出的内容。
+
+## E0017 日志开关无效
+
+`--log` 的写法无法解析，或使用了未知的领域、编号或级别。
+
+例子：`--log style=loud` 使用了不存在的级别；`--log asset=list` 使用了已拆分的旧领域名。
+
+处理：使用 `[topic[.severity]=]level`，省略类别时作用于全部诊断，例如 `--log summary`。领域可用：`all`、`progress`、`warning`、`note`、`network`、`encoding`、`image`、`attachment`、`style`、`structure`、`integrity`、`inference`、`word`，也可以直接写编号如 `W0014`。级别可用：`off`、`summary`、`list`、`context`。需要按严重度细分时写成 `style.warning=list` 或 `style.note=off`。
+
 ## E0101 请求超时
 
 网页或资源在设定时间内没有完成响应。
@@ -721,3 +745,45 @@ UEditor 用带 brush 标记的 pre 保存代码，保存时会将普通空格写
 例子：`<pre class="brush:python">&nbsp;&nbsp;print(1)</pre>` 输出保留两个普通空格的缩进。
 
 处理：检查代码缩进即可。普通 pre 中的不换行空格保持原值。
+
+## N0033 已跳过页面分页样式
+
+输入包含孤行控制或分页位置要求，导出使用目标文档自身的分页规则。
+
+例子：`orphans:2;widows:2;page-break-after:avoid` 用于控制打印时段落如何跨页，正文文字保持不变。
+
+处理：需要指定分页时，在 Typst 文档中调整分页；这类样式的原值可通过 --verbose 查看。
+
+## N0034 已保留文档字段的显示文字
+
+sdfield 标签保存页码、日期等文档字段，导出保留当前显示文字。
+
+例子：`<sdfield type="PAGE">3</sdfield>` 导出为文字 3。
+
+处理：核对当前文字；需要自动页码时，在目标文档中设置页码。
+
+## N0035 已读取列表样式
+
+列表的 list-style-type 已写入正文结构。输出格式支持的标记会随列表输出。
+
+例子：`<ul style="list-style-type:square">` 保留方块标记；UEditor 的 dot 和 dash 在 Typst 中使用圆点和短横线。
+
+处理：核对列表标记。其他自定义图案可能同时产生 W0018 或 W0010，详细说明记录具体限制。
+
+## N0036 已使用附件标题补全链接文字
+
+附件链接只有图标或空白，已使用原有 sudyfile-attr、title 或 download 中的标题作为显示文字。
+
+例子：链接仅包含 Word 图标，但 sudyfile-attr 保存了“报名表.docx”，导出使用“报名表.docx”作为链接文字。
+
+处理：核对显示的附件名称。没有标题的空链接保留原地址；可在正文 JSON 中补充文字。
+
+## N0037 已跳过无输出影响的样式
+
+该样式只影响浏览器中的视觉或布局，正文文字、图片和链接不受影响，导出时忽略。
+
+例子：`text-wrap-mode: wrap`、`--size: 12px`、`font-feature-settings: "kern"`、`padding: 4px`。
+
+`white-space: pre*` 和 `display: none` 会影响内容呈现，仍按 W0014 报告。
+
+处理：无需处理。需要核对全部被跳过的声明时，使用 `--verbose` 或查看 JSON 结果中的 notes。
