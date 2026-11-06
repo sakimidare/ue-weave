@@ -18,6 +18,35 @@ fn markdown_html(markdown: &str) -> String {
 }
 
 #[test]
+fn definition_terms_and_font_names_survive_all_profiles() {
+    use crate::profile::{prepare_documents, Profile};
+    let ir = parse(
+        r#"<p><span style='font-family:"ACME,  Inc"'>字体</span></p><dl><dt><strong>术语</strong></dt><dd>解释</dd><dt>混合<strong>加粗</strong><em>斜体</em></dt><dd>说明</dd></dl>"#,
+    );
+    for profile in [
+        Profile::Conservative,
+        Profile::Balanced,
+        Profile::Aggressive,
+    ] {
+        let settings = profile.settings();
+        let prepared = prepare_documents(&ir, settings);
+        let markdown = if settings.native_markdown {
+            render_editable(&prepared.ir)
+        } else {
+            render(&prepared.ir)
+        };
+        assert!(!markdown.contains("****"), "{markdown}");
+        let html = markdown_html(&markdown);
+        assert!(html.contains("<strong>术语</strong>"), "{html}");
+        assert!(html.contains("解释"));
+        assert!(html.contains("<em>斜体</em>"));
+        if matches!(profile, Profile::Conservative) {
+            assert!(crate::renderer::render(&prepared.ir).contains("ACME,  Inc"));
+        }
+    }
+}
+
+#[test]
 fn cse_dates_years_and_table_cells_use_single_emphasis_pairs() {
     let ir = parse(include_str!("../../fixtures/cse-emphasis.html"));
     let original = serde_json::to_string(&ir).unwrap();

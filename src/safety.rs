@@ -80,41 +80,78 @@ pub fn corrupted_style(value: &str) -> bool {
 }
 
 pub fn repair_corrupted_font(value: &str) -> String {
-    value
-        .split(',')
-        .map(str::trim)
-        .map(|part| {
-            let (base, important) = crate::css::value_priority(part);
-            let lower = base.to_ascii_lowercase();
-            let mut cleaned = base.to_string();
-            for marker in ["undefinedundefined", "undefined"] {
-                if lower.starts_with(marker)
-                    && lower.ends_with(marker)
-                    && base.len() > marker.len() * 2
-                {
-                    cleaned = base[marker.len()..base.len() - marker.len()].to_string();
-                    break;
-                }
-            }
-            if cleaned.contains(char::is_whitespace)
-                && !cleaned.starts_with(['\'', '"'])
-                && !cleaned.ends_with(['\'', '"'])
-            {
-                cleaned = format!("\"{cleaned}\"");
-            }
-            if important {
-                format!("{cleaned} !important")
+    let mut input = cssparser::ParserInput::new(value);
+    let mut parser = cssparser::Parser::new(&mut input);
+    let mut start = 0;
+    let mut result = String::new();
+    while !parser.is_exhausted() {
+        let before = parser.position().byte_index();
+        let Ok(token) = parser.next_including_whitespace_and_comments() else {
+            return value.to_owned();
+        };
+        if matches!(token, cssparser::Token::Comma) {
+            result.push_str(&repair_font_name(&value[start..before]));
+            result.push(',');
+            start = parser.position().byte_index();
+        }
+    }
+    result.push_str(&repair_font_name(&value[start..]));
+    result
+}
+
+fn repair_font_name(part: &str) -> String {
+    let trimmed = part.trim();
+    let (base, _) = crate::css::value_priority(trimmed);
+    let unquoted = base
+        .strip_prefix('"')
+        .and_then(|s| s.strip_suffix('"'))
+        .or_else(|| base.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')))
+        .unwrap_or(base);
+    let lower = unquoted.to_ascii_lowercase();
+    for marker in ["undefinedundefined", "undefined"] {
+        if lower.starts_with(marker) && lower.ends_with(marker) && unquoted.len() > marker.len() * 2
+        {
+            let cleaned = &unquoted[marker.len()..unquoted.len() - marker.len()];
+            let mut quoted = String::new();
+            if cleaned.contains(char::is_whitespace) || unquoted != base {
+                cssparser::serialize_string(cleaned, &mut quoted).expect("writing to String");
             } else {
-                cleaned
+                quoted.push_str(cleaned);
             }
-        })
-        .collect::<Vec<_>>()
-        .join(", ")
+            let offset = part.len() - part.trim_start().len();
+            return format!(
+                "{}{}{}",
+                &part[..offset],
+                quoted,
+                &part[offset + base.len()..]
+            );
+        }
+    }
+    part.to_owned()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn font_repair_preserves_valid_names_and_separators() {
+        for value in [
+            r#""ACME,  Inc",  serif"#,
+            "Microsoft YaHei,serif",
+            r"ACME\,Inc, serif",
+            "  Arial ,  serif  ",
+        ] {
+            assert_eq!(repair_corrupted_font(value), value);
+        }
+        assert_eq!(
+            repair_corrupted_font(r#""ACME,  Inc",  undefinedMicrosoft YaHeiundefined,serif"#),
+            r#""ACME,  Inc",  "Microsoft YaHei",serif"#
+        );
+        assert_eq!(
+            repair_corrupted_font(r#""undefinedMicrosoft YaHeiundefined", serif"#),
+            r#""Microsoft YaHei", serif"#
+        );
+    }
     #[test]
     fn rejects_executable_urls_and_css() {
         for value in [

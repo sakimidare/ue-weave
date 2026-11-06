@@ -245,6 +245,14 @@ fn editable_block(block: &Block) -> String {
             .children
             .iter()
             .map(|child| {
+                let mut term;
+                let child = if child.kind == "definition_term" {
+                    term = child.clone();
+                    term.visit_runs_mut(&mut |run| run.bold = true);
+                    &term
+                } else {
+                    child
+                };
                 let text = format!(
                     "{}{}",
                     runs_markdown(&child.runs),
@@ -256,7 +264,7 @@ fn editable_block(block: &Block) -> String {
                         .join("\n\n")
                 );
                 match child.kind.as_str() {
-                    "definition_term" => format!("**{text}**"),
+                    "definition_term" => text,
                     "definition_description" => text
                         .lines()
                         .map(|line| format!("> {line}"))

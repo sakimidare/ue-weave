@@ -1,6 +1,7 @@
 //! 合并导出时格式相同的相邻文字，保留解析结果及来源记录。
 use crate::model::Run;
 use std::borrow::Cow;
+use std::collections::HashSet;
 
 fn mergeable(left: &Run, right: &Run) -> bool {
     !left.line_break
@@ -27,16 +28,20 @@ fn mergeable(left: &Run, right: &Run) -> bool {
 
 pub(crate) fn coalesce(runs: &[Run]) -> Vec<Cow<'_, Run>> {
     let mut result: Vec<Cow<'_, Run>> = Vec::with_capacity(runs.len());
+    let mut sources: Option<HashSet<String>> = None;
     for run in runs {
         if let Some(previous) = result.last_mut().filter(|last| mergeable(last, run)) {
             let previous = previous.to_mut();
+            let sources =
+                sources.get_or_insert_with(|| previous.source_nodes.iter().cloned().collect());
             previous.text.push_str(&run.text);
             for node in &run.source_nodes {
-                if !previous.source_nodes.contains(node) {
+                if sources.insert(node.clone()) {
                     previous.source_nodes.push(node.clone());
                 }
             }
         } else {
+            sources = None;
             result.push(Cow::Borrowed(run));
         }
     }
