@@ -162,11 +162,49 @@ ue-weave URL -o out --log W0014=list
 | `W0014`、`N0037` | 单个编号 |
 | `list`（省略类别） | 等价于 `all=list` |
 
-优先级：**编号 > 领域.严重度 > 领域 > `warning`/`note` > `all`**；同一优先级下后写的覆盖先写的。
+优先级从高到低：
+
+| 优先级 | 设置 | 示例 |
+| --- | --- | --- |
+| 1 | 具体编号 | `W0014=off` |
+| 2 | 类别 + 警告或提示 | `style.warning=list` |
+| 3 | 类别 | `style=list` |
+| 4 | 警告或提示 | `warning=summary`、`note=off` |
+| 5 | 全局设置 | `all=off`，简写为 `off` |
+| 6 | 快捷预设 | `--verbose`、`--quiet` |
+| 7 | 默认设置 | 见下文 |
+
+每条诊断采用匹配到的最高优先级设置。同一优先级按命令行从左到右处理，后写的覆盖先写的；逗号分隔的设置也遵循此规则。高优先级设置始终有效，即使低优先级设置写在后面。
+
+编号不区分大小写，`w0001=summary` 与 `W0001=summary` 相同。设置某个编号只调整该编号，其他诊断沿用已有设置。例如，`--log w0001=summary` 设置编码识别警告的显示方式，样式警告 W0014 仍按默认方式汇总。只想显示 W0001 时使用 `--log off,w0001=summary`；本次没有 W0001 时就不显示该项。
 
 默认级别：warning 为 `summary`；带地址或位置的编号（`W0002`、`W0003`、`W0004`、`W0005`、`W0006`、`W0015`）为 `list`；其余 note 为 `off`。运行时提示 `N0028`（重试）、`N0029`（查看详情）、`N0030`（解释提示）默认显示，可用 `note=off`、`N0030=off` 或 `--quiet` 关闭。进度行默认关闭。错误始终输出，不受日志开关影响。
 
-`--quiet` 等于 `--log all=off`，`--verbose` 等于 `--log all=context`。这两个开关互斥，同时使用会报错；需要组合效果时改用 `--log`，例如 `--quiet --log note=list` 只显示提示。
+`--quiet` 将全局预设为 `off`，`--verbose` 将全局预设为 `context`。显式的 `--log` 设置覆盖快捷预设，与这两个参数的位置无关。`--quiet` 和 `--verbose` 互斥，同时使用会报错。
+
+组合示例（错误始终显示）：
+
+```sh
+# 关闭进度、警告和提示；交换这两个参数的位置，结果相同。
+ue-weave URL -o out --verbose --log off
+
+# 只显示图片相关诊断及其 HTML 上下文。
+ue-weave URL -o out --verbose --log off --log image=context
+
+# 显示样式相关诊断，关闭其中的 W0014。
+ue-weave URL -o out --verbose --log off --log style=list --log W0014=off
+
+# 同一类别后写的生效：样式诊断关闭。
+ue-weave URL -o out --log style=list,style=off
+
+# 编号优先于类别：W0014 仍逐条显示。
+ue-weave URL -o out --log W0014=list,style=off
+
+# 只显示提示。
+ue-weave URL -o out --quiet --log note=list
+```
+
+进度行由全局设置或 `progress` 控制，`warning`、`note` 和具体诊断编号不控制进度行。`progress=off` 关闭进度，其余三个级别均显示进度行。`--log progress=off` 可与上下文日志一起使用，HTML 与输出文字的排版宽度保持一致。
 
 日志开关只影响终端输出，不改变 `--json` 结果、`report.json` 内容和退出码。
 

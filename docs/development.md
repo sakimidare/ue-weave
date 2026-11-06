@@ -66,6 +66,8 @@ UEditor 的参考提交和许可证位置见 [规则来源](ueditor-reference.md
 
 日志格式与编号见[日志编号](diagnostics.md)。错误和警告通过枚举建模，终端及 JSON 使用相同编号。
 
+`log/filter.rs` 解析日志开关并决定显示级别，`diagnostic/topic.rs` 定义诊断所属类别。过滤顺序与示例见[日志开关](usage.md#日志开关)。快捷预设先加入全局规则，再加入显式 `--log` 规则；匹配时按编号、类别与严重度组合、类别、严重度、全局的优先级选择，同层后写覆盖。运行时提示及错误后的解释提示共用过滤配置，错误本身始终输出。进度行单独读取全局与 `progress` 设置。
+
 `diagnostic/warning.rs` 的 `WarningKind` 管理警告和 W 编号，`diagnostic/note.rs` 的 `NoteKind` 管理提示和 N 编号。`DiagnosticKind` 组合两类枚举，`Diagnostic` 保存详情并统一序列化；等级由枚举类别确定。网络重试使用 N0028，具体网络错误码放在详情中。
 
 `diagnostic/details.rs` 集中定义详情字段。布尔状态、属性名、错误编号和来源编号数组使用具体类型；原始值及转换结果可保存不同形态的 JSON 值。构造诊断时使用结构体字段，反序列化时检查未知字段和字段类型。

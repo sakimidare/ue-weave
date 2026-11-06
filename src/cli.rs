@@ -71,10 +71,10 @@ pub(crate) struct Args {
     /// 关闭标题、署名和缩进推断。
     #[arg(long, help_heading = "输入与正文")]
     pub(crate) no_inference: bool,
-    /// 显示详细日志；等价于 --log all=context。
+    /// 预设详细日志，可用 --log 覆盖。
     #[arg(long, help_heading = "运行信息")]
     pub(crate) verbose: bool,
-    /// 只输出错误；等价于 --log all=off。
+    /// 预设只输出错误，可用 --log 开启其他日志。
     #[arg(long, conflicts_with = "verbose", help_heading = "运行信息")]
     pub(crate) quiet: bool,
     /// 日志开关，可重复或用逗号分隔：[topic[.severity]=]level，例如 style=list、style.warning=off。

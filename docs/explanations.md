@@ -132,9 +132,9 @@ HTTP header 名称、值或命令行的 NAME=VALUE 格式有误，或尝试覆�
 
 ## E0017 日志开关无效
 
-`--log` 的写法无法解析，或使用了未知的领域、编号或级别。
+`--log` 的写法无法解析，或使用了未知的类别或级别。
 
-例子：`--log style=loud` 使用了不存在的级别；`--log asset=list` 使用了已拆分的旧领域名。
+例子：`--log style=loud` 使用了不存在的级别；`--log asset=list` 使用了不存在的类别。
 
 处理：使用 `[topic[.severity]=]level`，省略类别时作用于全部诊断，例如 `--log summary`。领域可用：`all`、`progress`、`warning`、`note`、`network`、`encoding`、`image`、`attachment`、`style`、`structure`、`integrity`、`inference`、`word`，也可以直接写编号如 `W0014`。级别可用：`off`、`summary`、`list`、`context`。需要按严重度细分时写成 `style.warning=list` 或 `style.note=off`。
 

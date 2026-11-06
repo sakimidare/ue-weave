@@ -126,6 +126,7 @@ typst compile output/reconstructed.typ output/result.pdf
 ## 更多选项
 
 - `--verbose`：查看详细处理过程。
+- `--quiet`：只显示错误；`--log` 可按类别或编号调整日志，覆盖快捷预设。完整优先级和组合示例见[日志开关](docs/usage.md#日志开关)。
 - `--explain N0002`：查看编号含义、具体例子和处理方法，可单独运行。
 - `--timeout 45`：将每次请求的超时设为 45 秒，默认 30 秒。
 - `--retries 3`：临时网络故障重试 3 次，默认 2 次。
