@@ -136,13 +136,21 @@ fn custom_headers_stay_on_the_input_origin() {
                     assert!(Instant::now() < deadline, "未收到请求");
                     thread::sleep(Duration::from_millis(10));
                 };
+                // Accepted sockets can inherit nonblocking mode on macOS.
+                stream.set_nonblocking(false).unwrap();
                 stream
                     .set_read_timeout(Some(Duration::from_secs(2)))
                     .unwrap();
-                let mut bytes = [0; 8192];
-                let length = stream.read(&mut bytes).unwrap();
+                let mut bytes = Vec::new();
+                while !bytes.windows(4).any(|window| window == b"\r\n\r\n") {
+                    let mut chunk = [0; 1024];
+                    let length = stream.read(&mut chunk).unwrap();
+                    assert!(length > 0, "连接在请求头读取完成前关闭");
+                    bytes.extend_from_slice(&chunk[..length]);
+                    assert!(bytes.len() <= 8192, "请求头超过测试限制");
+                }
                 stream.write_all(response.as_bytes()).unwrap();
-                String::from_utf8_lossy(&bytes[..length]).to_ascii_lowercase()
+                String::from_utf8_lossy(&bytes).to_ascii_lowercase()
             })
         };
         let body = format!("<div class='Article_Content'><img src='{target_url}/image.png'></div>");
