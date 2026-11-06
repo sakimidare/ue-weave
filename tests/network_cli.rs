@@ -65,12 +65,7 @@ fn fixed_address_preserves_host_and_downloads_mislabeled_images() {
                 assert!(Instant::now() < deadline, "请求未到达");
                 thread::sleep(Duration::from_millis(10));
             };
-            stream
-                .set_read_timeout(Some(Duration::from_secs(2)))
-                .unwrap();
-            let mut buffer = [0; 4096];
-            let n = stream.read(&mut buffer).unwrap();
-            let request = String::from_utf8_lossy(&buffer[..n]);
+            let request = read_request(&mut stream);
             assert!(request
                 .to_lowercase()
                 .contains(&format!("host: campus.example:{port}")));
@@ -136,21 +131,9 @@ fn custom_headers_stay_on_the_input_origin() {
                     assert!(Instant::now() < deadline, "未收到请求");
                     thread::sleep(Duration::from_millis(10));
                 };
-                // Accepted sockets can inherit nonblocking mode on macOS.
-                stream.set_nonblocking(false).unwrap();
-                stream
-                    .set_read_timeout(Some(Duration::from_secs(2)))
-                    .unwrap();
-                let mut bytes = Vec::new();
-                while !bytes.windows(4).any(|window| window == b"\r\n\r\n") {
-                    let mut chunk = [0; 1024];
-                    let length = stream.read(&mut chunk).unwrap();
-                    assert!(length > 0, "连接在请求头读取完成前关闭");
-                    bytes.extend_from_slice(&chunk[..length]);
-                    assert!(bytes.len() <= 8192, "请求头超过测试限制");
-                }
+                let request = read_request(&mut stream);
                 stream.write_all(response.as_bytes()).unwrap();
-                String::from_utf8_lossy(&bytes).to_ascii_lowercase()
+                request.to_ascii_lowercase()
             })
         };
         let body = format!("<div class='Article_Content'><img src='{target_url}/image.png'></div>");
@@ -247,6 +230,23 @@ fn private_network_requires_explicit_option() {
     );
 }
 
+fn read_request(stream: &mut std::net::TcpStream) -> String {
+    // Accepted sockets can inherit the listener's nonblocking mode.
+    stream.set_nonblocking(false).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    let mut bytes = Vec::new();
+    while !bytes.windows(4).any(|window| window == b"\r\n\r\n") {
+        let mut chunk = [0; 1024];
+        let length = stream.read(&mut chunk).unwrap();
+        assert!(length > 0, "连接在请求头读取完成前关闭");
+        bytes.extend_from_slice(&chunk[..length]);
+        assert!(bytes.len() <= 8192, "请求头超过测试限制");
+    }
+    String::from_utf8(bytes).unwrap()
+}
+
 fn serve(responses: Vec<(u16, String)>) -> (String, thread::JoinHandle<usize>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
@@ -264,10 +264,7 @@ fn serve(responses: Vec<(u16, String)>) -> (String, thread::JoinHandle<usize>) {
                 }
                 thread::sleep(Duration::from_millis(5));
             };
-            stream
-                .set_read_timeout(Some(Duration::from_secs(1)))
-                .unwrap();
-            let _ = stream.read(&mut [0; 4096]);
+            let _ = read_request(&mut stream);
             write!(
                 stream,
                 "HTTP/1.1 {status} Test\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",

@@ -343,6 +343,7 @@ mod tests {
             let mut requests = 0;
             while requests < 4 && Instant::now() < deadline {
                 if let Ok((mut stream, _)) = listener.accept() {
+                    stream.set_nonblocking(false).unwrap();
                     stream
                         .set_read_timeout(Some(Duration::from_secs(1)))
                         .unwrap();
