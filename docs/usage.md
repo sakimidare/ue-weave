@@ -204,7 +204,9 @@ ue-weave URL -o out --log W0014=list,style=off
 ue-weave URL -o out --quiet --log note=list
 ```
 
-进度行由全局设置或 `progress` 控制，`warning`、`note` 和具体诊断编号不控制进度行。`progress=off` 关闭进度，其余三个级别均显示进度行。`--log progress=off` 可与上下文日志一起使用，HTML 与输出文字的排版宽度保持一致。
+进度行由全局设置或 `progress` 控制，`warning`、`note` 和具体诊断编号不控制进度行。`progress=off` 和 `progress=summary` 均关闭进度行；`progress=list` 和 `progress=context` 显示进度行。
+
+`--log all=summary`（简写为 `--log summary`）也会隐藏进度行。需要同时显示进度时，使用 `--log all=summary,progress=list`；类别设置 `progress=list` 优先于全局设置。`--log progress=off` 可与上下文日志一起使用，HTML 与输出文字的排版宽度保持一致。
 
 日志开关只影响终端输出，不改变 `--json` 结果、`report.json` 内容和退出码。
 

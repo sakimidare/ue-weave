@@ -138,6 +138,12 @@ HTTP header 名称、值或命令行的 NAME=VALUE 格式有误，或尝试覆�
 
 处理：使用 `[topic[.severity]=]level`，省略类别时作用于全部诊断，例如 `--log summary`。领域可用：`all`、`progress`、`warning`、`note`、`network`、`encoding`、`image`、`attachment`、`style`、`structure`、`integrity`、`inference`、`word`，也可以直接写编号如 `W0014`。级别可用：`off`、`summary`、`list`、`context`。需要按严重度细分时写成 `style.warning=list` 或 `style.note=off`。
 
+编号不区分大小写，`w0014=list` 与 `W0014=list` 相同。单独设置一个编号时，其他日志沿用已有设置；只显示该编号可用 `--log off,W0014=list`。
+
+优先级从高到低为：编号、类别与严重度组合、类别、warning/note、全局设置、--verbose/--quiet 预设、默认设置。同一优先级后写的生效。例如 `--verbose --log off` 关闭进度、警告和提示，错误仍然显示。
+
+进度行使用 `progress=list` 或 `progress=context` 开启，`progress=off` 或 `progress=summary` 关闭。`--log all=summary` 也隐藏进度；需要显示进度可用 `--log all=summary,progress=list`。
+
 ## E0101 请求超时
 
 网页或资源在设定时间内没有完成响应。
@@ -700,19 +706,19 @@ font-family 中出现了编辑器异常包装。此提示表示检测结果；�
 
 ## N0028 准备重试网络请求
 
-上一次请求遇到可重试的错误，程序即将再次请求同一地址。详情中列出了错误编号和重试次数。
+上一次请求遇到可重试的错误，程序即将再次请求同一地址。详情列出请求地址、错误编号、错误原因和下次重试前的等待时间。
 
 例子：第一次请求超时，出现 E0101，随后开始第 1 次重试。
 
-处理：等待最终结果；可用 --retries 0 关闭重试，或用 --timeout 60 增加单次等待时间。
+处理：等待最终结果；可用 `--retries 0` 关闭重试，或用 `--timeout 60` 增加单次等待时间。添加 `--log progress=list` 可在 Fetching 进度行中查看当前尝试次数及总次数。`--log N0028=off` 只关闭重试提示，请求仍按原设置重试。
 
 ## N0029 使用 --verbose 查看详情
 
-当前输出省略了逐项处理细节。加 --verbose 可以查看 HTML 上下文、对应输出文字及具体属性。
+当前输出汇总了同类诊断。使用 context 级别可查看 HTML 上下文、对应输出文字及具体属性。
 
-例子：命令末尾加上 `--verbose`，即可展开附件图标清理或署名判断的详情。
+例子：命令末尾加上 `--log W0014=context`，可展开样式警告的详情。只查看这类警告可使用 `--log off,W0014=context`。
 
-处理：需要检查某处结果时重新运行同一命令并添加 --verbose；仅查询编号含义时使用 --explain。
+处理：重新运行同一命令，为目标编号设置 context。`--verbose` 开启全局详情预设，显式的 `--log` 设置优先于该预设；已有 `--log off` 时，添加 `--log W0014=context` 可开启该编号的详情。同一编号多次设置时，最后一项生效。仅查询编号含义时使用 `--explain W0014`。
 
 ## N0030 使用 --explain 查看编号解释
 
@@ -786,4 +792,4 @@ sdfield 标签保存页码、日期等文档字段，导出保留当前显示文
 
 `white-space: pre*` 和 `display: none` 会影响内容呈现，仍按 W0014 报告。
 
-处理：无需处理。需要核对全部被跳过的声明时，使用 `--verbose` 或查看 JSON 结果中的 notes。
+处理：需要核对被跳过的声明时，使用 `--log N0037=context`。使用 `--json` 时，可在运行结果的 `warnings` 数组中查找 `code` 为 `N0037`、`level` 为 `note` 的记录，其中包含属性名和原值。导出的正文 JSON 保存文章内容，诊断信息位于运行结果中。
