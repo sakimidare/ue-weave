@@ -70,6 +70,7 @@ pub mod cli;
 mod pipeline;
 
 pub use profile::Profile;
+pub use site_config::SiteSelectors;
 
 use std::path::Path;
 
@@ -81,7 +82,7 @@ use std::path::Path;
 /// 外部代码依赖字段布局，后续新增选项也不会破坏调用方。
 #[derive(Clone, Debug)]
 pub struct ParseOptions {
-    selector: Option<String>,
+    selectors: SiteSelectors,
     source: Option<String>,
     infer: bool,
 }
@@ -96,15 +97,23 @@ impl ParseOptions {
     /// 使用默认选项。
     pub fn new() -> Self {
         Self {
-            selector: None,
+            selectors: SiteSelectors::default(),
             source: None,
             infer: true,
         }
     }
 
-    /// 指定正文容器的 CSS 选择器；省略时自动识别。
+    /// 指定正文容器的 CSS 选择器；省略时自动识别。等价于 `selectors` 的 `content`。
     pub fn selector(mut self, selector: impl Into<String>) -> Self {
-        self.selector = Some(selector.into());
+        self.selectors = self.selectors.content(selector);
+        self
+    }
+
+    /// 指定正文与元数据字段的选择器，等价于 `--selector` 与 `--site-config`。
+    ///
+    /// 整体替换已有选择器；之后调用 `selector` 只会覆盖正文。
+    pub fn selectors(mut self, selectors: SiteSelectors) -> Self {
+        self.selectors = selectors;
         self
     }
 
@@ -393,14 +402,11 @@ impl std::fmt::Debug for Diagnostic {
 }
 
 fn parse_document(document: &scraper::Html, options: &ParseOptions) -> Result<model::Ir, Error> {
-    let requested = options.selector.as_deref().unwrap_or("auto");
+    let requested = options.selectors.content_selector().unwrap_or("auto");
     let selector = site::content_selector(document, requested)?;
-    Ok(parser::parse(
-        document,
-        &selector,
-        !options.infer,
-        options.source.clone(),
-    )?)
+    let mut ir = parser::parse(document, &selector, !options.infer, options.source.clone())?;
+    options.selectors.apply_metadata(document, &mut ir.metadata);
+    Ok(ir)
 }
 
 /// 文章中的附件。

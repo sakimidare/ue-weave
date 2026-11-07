@@ -150,7 +150,7 @@ let document = article.to_document_with(OutputOptions::new(Profile::Aggressive))
 println!("{}", document.markdown);
 ```
 
-- `ParseOptions`：选择器、原网页地址、是否推断；
+- `ParseOptions` / `SiteSelectors`：正文与字段选择器、原网页地址、是否推断；
 - `Article::from_bytes`：自动识别 BOM 与 `<meta charset>`；
 - `Article::from_json` / `from_json_bytes`：读取 `--formats ir` 导出的正文，对应 `to_json` 与 `to_json_bytes`；
 - `to_json_compact`：省略来源节点，体积约为完整 JSON 的四分之一，仍可被 `from_json` 读取；

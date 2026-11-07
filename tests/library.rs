@@ -1,4 +1,4 @@
-use ue_weave::{Article, Level, OutputOptions, ParseOptions, Profile};
+use ue_weave::{Article, Level, OutputOptions, ParseOptions, Profile, SiteSelectors};
 
 const PAGE: &str = "<div class='body'><p>请<strong>按时</strong>报名</p><p><a href='/form.pdf'>申请表</a></p></div>";
 
@@ -109,41 +109,54 @@ fn deprecated_names_match_the_new_ones() {
 
 #[test]
 fn library_output_matches_cli_profiles() {
-    let bytes = std::fs::read("fixtures/seu-585911.html").unwrap();
-    let article = Article::from_bytes(&bytes, ParseOptions::new()).unwrap();
-    for profile in [Profile::Conservative, Profile::Aggressive] {
-        for metadata in [false, true] {
-            let dir = tempfile::Builder::new()
-                .prefix("ue-lib-compare-")
-                .tempdir()
-                .unwrap();
-            let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_ue-weave"));
-            command
-                .args(["--input", "fixtures/seu-585911.html", "--output"])
-                .arg(dir.path())
-                .args(["--formats", "html,markdown,typst", "--profile"])
-                .arg(match profile {
-                    Profile::Conservative => "conservative",
-                    Profile::Balanced => "balanced",
-                    Profile::Aggressive => "aggressive",
-                    _ => unreachable!("仅三种预设"),
+    for fixture in [
+        "fixtures/seu-585911.html",
+        "fixtures/cse-588376.html",
+        "fixtures/webplus-college.html",
+    ] {
+        let bytes = std::fs::read(fixture).unwrap();
+        let article = Article::from_bytes(&bytes, ParseOptions::new()).unwrap();
+        for profile in [
+            Profile::Conservative,
+            Profile::Balanced,
+            Profile::Aggressive,
+        ] {
+            for metadata in [false, true] {
+                let dir = tempfile::Builder::new()
+                    .prefix("ue-lib-compare-")
+                    .tempdir()
+                    .unwrap();
+                let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_ue-weave"));
+                command
+                    .args(["--input", fixture, "--output"])
+                    .arg(dir.path())
+                    .args(["--formats", "html,markdown,typst", "--profile"])
+                    .arg(match profile {
+                        Profile::Conservative => "conservative",
+                        Profile::Balanced => "balanced",
+                        Profile::Aggressive => "aggressive",
+                        _ => unreachable!("仅三种预设"),
+                    });
+                if metadata {
+                    command.arg("--include-metadata");
+                }
+                let output = command.output().unwrap();
+                assert!(output.status.success(), "{fixture} {profile:?}");
+                let expected = article.to_document_with(OutputOptions {
+                    include_metadata: Some(metadata),
+                    ..OutputOptions::new(profile)
                 });
-            if metadata {
-                command.arg("--include-metadata");
-            }
-            let output = command.output().unwrap();
-            assert!(output.status.success(), "{profile:?}");
-            let expected = article.to_document_with(OutputOptions {
-                include_metadata: Some(metadata),
-                ..OutputOptions::new(profile)
-            });
-            for (name, actual) in [
-                ("reconstructed.html", expected.html),
-                ("reconstructed.md", expected.markdown),
-                ("reconstructed.typ", expected.typst),
-            ] {
-                let cli = std::fs::read_to_string(dir.path().join(name)).unwrap();
-                assert_eq!(actual, cli, "{profile:?} metadata={metadata} {name}");
+                for (name, actual) in [
+                    ("reconstructed.html", expected.html),
+                    ("reconstructed.md", expected.markdown),
+                    ("reconstructed.typ", expected.typst),
+                ] {
+                    let cli = std::fs::read_to_string(dir.path().join(name)).unwrap();
+                    assert_eq!(
+                        actual, cli,
+                        "{fixture} {profile:?} metadata={metadata} {name}"
+                    );
+                }
             }
         }
     }
@@ -403,4 +416,95 @@ fn integrity_reports_text_and_resource_checks() {
     let restored = Article::from_json(article.to_json()).unwrap();
     assert_eq!(restored.integrity().text, None);
     assert_eq!(restored.integrity().resources, None);
+}
+
+#[test]
+fn custom_selectors_match_cli_field_overrides() {
+    let fixture = "fixtures/cse-588376.html";
+    let bytes = std::fs::read(fixture).unwrap();
+    let article = Article::from_bytes(
+        &bytes,
+        ParseOptions::new().selectors(
+            SiteSelectors::new()
+                .title(".arti_title")
+                .date(".arti_update")
+                .publisher(".arti_publisher"),
+        ),
+    )
+    .unwrap();
+
+    let dir = tempfile::Builder::new()
+        .prefix("ue-lib-selector-")
+        .tempdir()
+        .unwrap();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_ue-weave"))
+        .args(["--input", fixture, "--output"])
+        .arg(dir.path())
+        .args([
+            "--formats",
+            "markdown",
+            "--include-metadata",
+            "--selector",
+            "title=.arti_title",
+            "--selector",
+            "date=.arti_update",
+            "--selector",
+            "publisher=.arti_publisher",
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let cli = std::fs::read_to_string(dir.path().join("reconstructed.md")).unwrap();
+    assert_eq!(
+        article.to_markdown_with(OutputOptions {
+            include_metadata: Some(true),
+            ..OutputOptions::default()
+        }),
+        cli
+    );
+    assert_eq!(
+        article.metadata().title.as_deref(),
+        Some("学院开展“企业家进高校”前沿大课堂系列活动（二）")
+    );
+}
+
+#[test]
+fn site_config_json_matches_cli_config() {
+    let fixture = "fixtures/webplus-college.html";
+    let bytes = std::fs::read(fixture).unwrap();
+    let config = br#"{"content":".wp_articlecontent","title":".arti_title"}"#;
+    let article = Article::from_bytes(
+        &bytes,
+        ParseOptions::new().selectors(SiteSelectors::from_json(config).unwrap()),
+    )
+    .unwrap();
+
+    let dir = tempfile::Builder::new()
+        .prefix("ue-lib-config-")
+        .tempdir()
+        .unwrap();
+    let path = dir.path().join("site.json");
+    std::fs::write(&path, config).unwrap();
+    let output = std::process::Command::new(env!("CARGO_BIN_EXE_ue-weave"))
+        .args(["--input", fixture, "--output"])
+        .arg(dir.path().join("out"))
+        .args(["--formats", "markdown", "--site-config"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let cli = std::fs::read_to_string(dir.path().join("out/reconstructed.md")).unwrap();
+    assert_eq!(article.to_markdown(), cli);
+}
+
+#[test]
+fn invalid_site_selectors_report_config_codes() {
+    let error = SiteSelectors::from_json(b"{").err().unwrap();
+    assert_eq!(error.code(), "E0003");
+    let error = SiteSelectors::from_json(br#"{"title":"["}"#).err().unwrap();
+    assert_eq!(error.code(), "E0003");
+    let error = SiteSelectors::from_json(br#"{"unknown":"div"}"#)
+        .err()
+        .unwrap();
+    assert_eq!(error.code(), "E0003");
 }

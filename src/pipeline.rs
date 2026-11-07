@@ -142,7 +142,7 @@ fn parse(input: input::Input, args: &Args, logger: &Logger) -> Result<Parsed> {
     let mut settings = args
         .site_config
         .as_deref()
-        .map(site_config::Selectors::load)
+        .map(site_config::SiteSelectors::load)
         .transpose()?
         .unwrap_or_default();
     logger.stage(
@@ -158,7 +158,7 @@ fn parse(input: input::Input, args: &Args, logger: &Logger) -> Result<Parsed> {
         .apply_overrides(&args.selector)?
         .unwrap_or_else(|| "auto".into());
     let selector =
-        site::content_selector(&document, settings.content.as_deref().unwrap_or("auto"))?;
+        site::content_selector(&document, settings.content_selector().unwrap_or("auto"))?;
     logger.stage("parse", format!("使用正文选择器 {selector}"));
     let mut ir = parser::parse(
         &document,

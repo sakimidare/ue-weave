@@ -8,10 +8,13 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::{fs, path::Path};
 
-#[derive(Default, Deserialize, Serialize)]
+/// 正文与元数据字段的 CSS 选择器，等价于命令行的 `--selector` 和 `--site-config`。
+///
+/// 未设置的字段使用内置模板规则；`content` 为 `None` 时自动识别正文。
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct Selectors {
-    pub content: Option<String>,
+pub struct SiteSelectors {
+    content: Option<String>,
     title: Option<String>,
     date: Option<String>,
     source: Option<String>,
@@ -19,8 +22,58 @@ pub struct Selectors {
     publisher: Option<String>,
 }
 
-impl Selectors {
-    pub fn apply_overrides(&mut self, overrides: &[String]) -> Result<Option<String>> {
+impl SiteSelectors {
+    /// 全部字段使用内置规则。
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 从 JSON 对象读取，等价于 `--site-config`；未知字段会被拒绝。
+    pub fn from_json(bytes: &[u8]) -> std::result::Result<Self, crate::Error> {
+        Self::parse(bytes, Path::new("<json>")).map_err(crate::Error::from)
+    }
+
+    /// 正文选择器；设为 `auto` 与省略等价。
+    pub fn content(mut self, selector: impl Into<String>) -> Self {
+        self.content = Some(selector.into());
+        self
+    }
+
+    /// 标题选择器。
+    pub fn title(mut self, selector: impl Into<String>) -> Self {
+        self.title = Some(selector.into());
+        self
+    }
+
+    /// 日期选择器。
+    pub fn date(mut self, selector: impl Into<String>) -> Self {
+        self.date = Some(selector.into());
+        self
+    }
+
+    /// 来源选择器。
+    pub fn source(mut self, selector: impl Into<String>) -> Self {
+        self.source = Some(selector.into());
+        self
+    }
+
+    /// 作者选择器。
+    pub fn author(mut self, selector: impl Into<String>) -> Self {
+        self.author = Some(selector.into());
+        self
+    }
+
+    /// 发布者选择器。
+    pub fn publisher(mut self, selector: impl Into<String>) -> Self {
+        self.publisher = Some(selector.into());
+        self
+    }
+
+    pub(crate) fn content_selector(&self) -> Option<&str> {
+        self.content.as_deref()
+    }
+
+    pub(crate) fn apply_overrides(&mut self, overrides: &[String]) -> Result<Option<String>> {
         let mut content_override = None;
         for value in overrides {
             let (field, css) = match value.split_once('=') {
@@ -56,16 +109,19 @@ impl Selectors {
         }
         Ok(content_override)
     }
-    pub fn load(path: &Path) -> Result<Self> {
+    pub(crate) fn load(path: &Path) -> Result<Self> {
         let bytes = fs::read(path).map_err(|source| RecoverError::ReadConfig {
             path: path.into(),
             source,
         })?;
-        let config: Self =
-            serde_json::from_slice(&bytes).map_err(|error| RecoverError::Config {
-                path: path.into(),
-                reason: error.to_string(),
-            })?;
+        Self::parse(&bytes, path)
+    }
+
+    fn parse(bytes: &[u8], path: &Path) -> Result<Self> {
+        let config: Self = serde_json::from_slice(bytes).map_err(|error| RecoverError::Config {
+            path: path.into(),
+            reason: error.to_string(),
+        })?;
         for (field, selector) in [
             ("content", &config.content),
             ("title", &config.title),
@@ -87,7 +143,7 @@ impl Selectors {
         Ok(config)
     }
 
-    pub fn apply_metadata(&self, document: &Html, metadata: &mut Map<String, Value>) {
+    pub(crate) fn apply_metadata(&self, document: &Html, metadata: &mut Map<String, Value>) {
         for (key, selector, labels) in [
             ("title", &self.title, &[][..]),
             ("date", &self.date, &["发布时间", "发布日期"][..]),
@@ -110,7 +166,7 @@ mod tests {
     use super::*;
     #[test]
     fn cli_fields_override_individually_and_preserve_attribute_equals() {
-        let mut selectors: Selectors =
+        let mut selectors: SiteSelectors =
             serde_json::from_value(serde_json::json!({"title":"h1","date":"time"})).unwrap();
         selectors
             .apply_overrides(&[
@@ -139,7 +195,7 @@ mod tests {
         let doc = Html::parse_document("<h1 class='arti_title'>原始标题</h1><span class='arti_update'>发布时间：2026-11-03</span><h2>自定义标题</h2>\
             <div class='wp_articlecontent'>正文</div>");
         let mut meta = site::metadata(&doc);
-        let selectors: Selectors =
+        let selectors: SiteSelectors =
             serde_json::from_value(serde_json::json!({"title":"h2"})).unwrap();
         selectors.apply_metadata(&doc, &mut meta);
         assert_eq!(meta["title"], "自定义标题");
@@ -151,7 +207,7 @@ mod tests {
             "<h1 class='arti_title'>默认标题</h1><div class='wp_articlecontent'>正文</div>",
         );
         let mut meta = site::metadata(&doc);
-        let selectors: Selectors =
+        let selectors: SiteSelectors =
             serde_json::from_value(serde_json::json!({"title":".missing"})).unwrap();
         selectors.apply_metadata(&doc, &mut meta);
         assert!(!meta.contains_key("title"));

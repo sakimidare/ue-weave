@@ -5,7 +5,7 @@
 
 use ue_weave::{
     Article, Attachment, Change, Diagnostic, Document, Error, Image, Integrity, Level, Metadata,
-    OutputOptions, ParseOptions, Profile,
+    OutputOptions, ParseOptions, Profile, SiteSelectors,
 };
 
 #[test]
@@ -15,12 +15,22 @@ fn constructors_are_pinned() {
     let _: fn(serde_json::Value) -> Result<Article, Error> = Article::from_json;
     let _: fn(&[u8]) -> Result<Article, Error> = Article::from_json_bytes;
     let _: fn() -> ParseOptions = ParseOptions::new;
+    let _: fn() -> SiteSelectors = SiteSelectors::new;
+    let _: fn(&[u8]) -> Result<SiteSelectors, Error> = SiteSelectors::from_json;
 }
 
 #[test]
 fn options_builders_are_pinned() {
+    let selectors: SiteSelectors = SiteSelectors::new()
+        .content(".Article_Content")
+        .title(".Article_Title")
+        .date(".Article_PublishDate")
+        .source(".Article_Source")
+        .author(".Article_Author")
+        .publisher(".arti_publisher");
     let options: ParseOptions = ParseOptions::new()
         .selector(".Article_Content")
+        .selectors(selectors)
         .source("https://example.org/a")
         .infer(false);
     let _: ParseOptions = options;
