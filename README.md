@@ -142,15 +142,15 @@ typst compile output/reconstructed.typ output/result.pdf
 项目同时是 Rust 库：解析已抓取或已保存的 HTML，直接生成文档。
 
 ```rust
-use ue_weave::{Article, Options, OutputOptions, Profile};
+use ue_weave::{Article, ParseOptions, OutputOptions, Profile};
 
-let article = Article::from_html(html, Options::new())?;
+let article = Article::from_html(html, ParseOptions::new())?;
 let document = article.to_document_with(OutputOptions::new(Profile::Aggressive));
 
 println!("{}", document.markdown);
 ```
 
-- `Options`：选择器、原网页地址、是否推断；
+- `ParseOptions`：选择器、原网页地址、是否推断；
 - `Article::from_bytes`：自动识别 BOM 与 `<meta charset>`；
 - `Article::from_json` / `from_json_bytes`：读取 `--formats ir` 导出的正文，对应 `to_json` 与 `to_json_bytes`；
 - `to_json_compact`：省略来源节点，体积约为完整 JSON 的四分之一，仍可被 `from_json` 读取；

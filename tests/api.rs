@@ -5,25 +5,25 @@
 
 use ue_weave::{
     Article, Attachment, Change, Diagnostic, Document, Error, Image, Integrity, Level, Metadata,
-    Options, OutputOptions, Profile,
+    OutputOptions, ParseOptions, Profile,
 };
 
 #[test]
 fn constructors_are_pinned() {
-    let _: fn(&str, Options) -> Result<Article, Error> = Article::from_html;
-    let _: fn(&[u8], Options) -> Result<Article, Error> = Article::from_bytes;
+    let _: fn(&str, ParseOptions) -> Result<Article, Error> = Article::from_html;
+    let _: fn(&[u8], ParseOptions) -> Result<Article, Error> = Article::from_bytes;
     let _: fn(serde_json::Value) -> Result<Article, Error> = Article::from_json;
     let _: fn(&[u8]) -> Result<Article, Error> = Article::from_json_bytes;
-    let _: fn() -> Options = Options::new;
+    let _: fn() -> ParseOptions = ParseOptions::new;
 }
 
 #[test]
 fn options_builders_are_pinned() {
-    let options: Options = Options::new()
+    let options: ParseOptions = ParseOptions::new()
         .selector(".Article_Content")
         .source("https://example.org/a")
         .infer(false);
-    let _: Options = options;
+    let _: ParseOptions = options;
 
     let output: OutputOptions = OutputOptions {
         include_metadata: Some(true),

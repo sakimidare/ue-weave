@@ -1,4 +1,4 @@
-use ue_weave::{Article, Level, Options, OutputOptions, Profile};
+use ue_weave::{Article, Level, OutputOptions, ParseOptions, Profile};
 
 const PAGE: &str = "<div class='body'><p>请<strong>按时</strong>报名</p><p><a href='/form.pdf'>申请表</a></p></div>";
 
@@ -6,7 +6,7 @@ const PAGE: &str = "<div class='body'><p>请<strong>按时</strong>报名</p><p>
 fn parses_explicit_selector_and_exports_every_format() {
     let article = Article::from_html(
         PAGE,
-        Options::new()
+        ParseOptions::new()
             .selector(".body")
             .source("https://example.org/news/page.html"),
     )
@@ -25,7 +25,7 @@ fn parses_explicit_selector_and_exports_every_format() {
 #[test]
 fn auto_detects_the_content_container() {
     let page = "<div class='Article_Content'><p>教务处通知</p></div>";
-    let article = Article::from_html(page, Options::new()).unwrap();
+    let article = Article::from_html(page, ParseOptions::new()).unwrap();
     assert!(article.to_markdown().contains("教务处通知"));
 }
 
@@ -34,13 +34,13 @@ fn decodes_declared_encoding_from_bytes() {
     let mut bytes = b"<meta charset='gbk'><div class='Article_Content'><p>".to_vec();
     bytes.extend_from_slice(&[0xd6, 0xd0, 0xce, 0xc4]);
     bytes.extend_from_slice(b"</p></div>");
-    let article = Article::from_bytes(&bytes, Options::new()).unwrap();
+    let article = Article::from_bytes(&bytes, ParseOptions::new()).unwrap();
     assert!(article.to_markdown().contains("中文"));
 }
 
 #[test]
 fn json_round_trips_through_from_json() {
-    let article = Article::from_html(PAGE, Options::new().selector(".body")).unwrap();
+    let article = Article::from_html(PAGE, ParseOptions::new().selector(".body")).unwrap();
     let json = article.to_json();
     let restored = Article::from_json(json.clone()).unwrap();
     assert_eq!(restored.to_markdown(), article.to_markdown());
@@ -54,7 +54,7 @@ fn metadata_and_assets_are_typed() {
         <a href='/b.docx' sudyfile-attr=\"{'title':'附件.docx'}\">附件</a></div>";
     let article = Article::from_html(
         page,
-        Options::new().source("https://example.org/a/page.htm"),
+        ParseOptions::new().source("https://example.org/a/page.htm"),
     )
     .unwrap();
     assert_eq!(article.metadata().title.as_deref(), Some("通知"));
@@ -72,7 +72,7 @@ fn metadata_and_assets_are_typed() {
 fn diagnostics_expose_codes_and_messages() {
     let page =
         "<div class='Article_Content'><p><span style='letter-spacing:2px'>甲</span></p></div>";
-    let article = Article::from_html(page, Options::new()).unwrap();
+    let article = Article::from_html(page, ParseOptions::new()).unwrap();
     let diagnostics = article.diagnostics();
     let unmapped = diagnostics
         .iter()
@@ -88,7 +88,7 @@ fn diagnostics_expose_codes_and_messages() {
 fn markdown_profile_switches_tables_to_native_markdown() {
     let page = "<div class='Article_Content'><table><tr><th>甲</th><th>乙</th></tr>\
         <tr><td>1</td><td>2</td></tr></table></div>";
-    let article = Article::from_html(page, Options::new()).unwrap();
+    let article = Article::from_html(page, ParseOptions::new()).unwrap();
     assert!(article.to_markdown().contains("<table"));
     let aggressive = article.to_markdown_with(OutputOptions::new(Profile::Aggressive));
     assert!(!aggressive.contains("<table"), "{aggressive}");
@@ -99,7 +99,7 @@ fn markdown_profile_switches_tables_to_native_markdown() {
 fn deprecated_names_match_the_new_ones() {
     #[allow(deprecated)]
     {
-        let article = Article::from_html(PAGE, Options::new().selector(".body")).unwrap();
+        let article = Article::from_html(PAGE, ParseOptions::new().selector(".body")).unwrap();
         assert_eq!(article.html(), article.to_html());
         assert_eq!(article.markdown(), article.to_markdown());
         assert_eq!(article.typst(), article.to_typst());
@@ -110,7 +110,7 @@ fn deprecated_names_match_the_new_ones() {
 #[test]
 fn library_output_matches_cli_profiles() {
     let bytes = std::fs::read("fixtures/seu-585911.html").unwrap();
-    let article = Article::from_bytes(&bytes, Options::new()).unwrap();
+    let article = Article::from_bytes(&bytes, ParseOptions::new()).unwrap();
     for profile in [Profile::Conservative, Profile::Aggressive] {
         for metadata in [false, true] {
             let dir = tempfile::Builder::new()
@@ -152,7 +152,7 @@ fn library_output_matches_cli_profiles() {
 #[test]
 fn single_format_helpers_match_to_document_with() {
     let bytes = std::fs::read("fixtures/seu-585911.html").unwrap();
-    let article = Article::from_bytes(&bytes, Options::new()).unwrap();
+    let article = Article::from_bytes(&bytes, ParseOptions::new()).unwrap();
     for profile in [
         Profile::Conservative,
         Profile::Balanced,
@@ -181,7 +181,7 @@ fn single_format_helpers_match_to_document_with() {
 #[test]
 fn output_options_match_cli_overrides() {
     let bytes = std::fs::read("fixtures/seu-585911.html").unwrap();
-    let article = Article::from_bytes(&bytes, Options::new()).unwrap();
+    let article = Article::from_bytes(&bytes, ParseOptions::new()).unwrap();
     let cases: [(&str, OutputOptions, &[&str]); 5] = [
         (
             "aggressive keeps fonts",
@@ -255,8 +255,8 @@ fn output_options_match_cli_overrides() {
 #[test]
 fn errors_have_the_same_codes_as_the_cli() {
     for (options, expected) in [
-        (Options::new().selector("["), "E0006"),
-        (Options::new().selector(".missing"), "E0007"),
+        (ParseOptions::new().selector("["), "E0006"),
+        (ParseOptions::new().selector(".missing"), "E0007"),
     ] {
         let error = Article::from_html("<p>通知</p>", options).err().unwrap();
         assert_eq!(error.code(), expected);
@@ -277,7 +277,7 @@ fn errors_expose_their_source_chain() {
 fn document_reports_export_changes() {
     let page = "<div class='Article_Content'><p><span style=\"font-family:微软雅黑, undefinedMicrosoft YaHeiundefined\">甲</span></p>\
         <table><tr><td>a</td><td>b</td></tr></table></div>";
-    let article = Article::from_html(page, Options::new()).unwrap();
+    let article = Article::from_html(page, ParseOptions::new()).unwrap();
     let document = article.to_document_with(OutputOptions {
         profile: Profile::Aggressive,
         ..OutputOptions::default()
@@ -302,7 +302,7 @@ fn document_reports_export_changes() {
 fn diagnostics_expose_log_topics() {
     let page = "<div class='Article_Content'><p><span style='letter-spacing:2px'>甲</span></p>\
         <p><img class='sudy-attachment-icon' src='/_ueditor/a.gif'></p></div>";
-    let article = Article::from_html(page, Options::new()).unwrap();
+    let article = Article::from_html(page, ParseOptions::new()).unwrap();
     let diagnostics = article.diagnostics();
     let style = diagnostics
         .iter()
@@ -322,7 +322,7 @@ fn byte_order_mark_wins_over_meta_charset() {
     bytes.extend_from_slice(
         "<meta charset='gbk'><div class='Article_Content'><p>中文</p></div>".as_bytes(),
     );
-    let article = Article::from_bytes(&bytes, Options::new()).unwrap();
+    let article = Article::from_bytes(&bytes, ParseOptions::new()).unwrap();
     assert!(article.to_markdown().contains("中文"));
 }
 
@@ -330,7 +330,7 @@ fn byte_order_mark_wins_over_meta_charset() {
 fn compact_json_round_trips_without_source_nodes() {
     let page = "<div class='Article_Content'><p>正文<strong>加粗</strong></p>\
         <p><a href='/a.pdf'>附件</a></p></div>";
-    let article = Article::from_html(page, Options::new()).unwrap();
+    let article = Article::from_html(page, ParseOptions::new()).unwrap();
     let full = article.to_json_bytes();
     let compact = article.to_json_compact_bytes();
     assert!(
@@ -395,7 +395,7 @@ fn downloaded_assets_keep_the_original_url() {
 #[test]
 fn integrity_reports_text_and_resource_checks() {
     let html = "<div class='Article_Content'><p>正文<img src='/a.png'></p></div>";
-    let article = Article::from_html(html, Options::new()).unwrap();
+    let article = Article::from_html(html, ParseOptions::new()).unwrap();
     let integrity = article.integrity();
     assert_eq!(integrity.text, Some(true));
     assert_eq!(integrity.resources, Some(true));

@@ -3,11 +3,11 @@
 //! 最小用法：
 //!
 //! ```
-//! use ue_weave::{Article, Options};
+//! use ue_weave::{Article, ParseOptions};
 //!
 //! let article = Article::from_html(
 //!     "<main><p>报名<strong>通知</strong></p></main>",
-//!     Options::new().selector("main"),
+//!     ParseOptions::new().selector("main"),
 //! )?;
 //! assert!(article.to_html().contains("<strong>通知</strong>"));
 //! assert_eq!(article.metadata().title, None);
@@ -73,26 +73,26 @@ pub use profile::Profile;
 
 use std::path::Path;
 
-/// 解析选项。
+/// 解析选项，与 `OutputOptions` 相对。
 ///
 /// 默认自动识别正文容器、启用格式推断、不补全链接。
 ///
 /// 字段私有并使用链式方法：这里只有三个取值稳定的选项，构建器能避免
 /// 外部代码依赖字段布局，后续新增选项也不会破坏调用方。
 #[derive(Clone, Debug)]
-pub struct Options {
+pub struct ParseOptions {
     selector: Option<String>,
     source: Option<String>,
     infer: bool,
 }
 
-impl Default for Options {
+impl Default for ParseOptions {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl Options {
+impl ParseOptions {
     /// 使用默认选项。
     pub fn new() -> Self {
         Self {
@@ -392,7 +392,7 @@ impl std::fmt::Debug for Diagnostic {
     }
 }
 
-fn parse_document(document: &scraper::Html, options: &Options) -> Result<model::Ir, Error> {
+fn parse_document(document: &scraper::Html, options: &ParseOptions) -> Result<model::Ir, Error> {
     let requested = options.selector.as_deref().unwrap_or("auto");
     let selector = site::content_selector(document, requested)?;
     Ok(parser::parse(
@@ -527,18 +527,18 @@ impl Article {
     /// 解析 HTML 文本。
     ///
     /// ```
-    /// use ue_weave::{Article, Options};
-    /// let article = Article::from_html("<div class='Article_Content'><p>正文</p></div>", Options::new())?;
+    /// use ue_weave::{Article, ParseOptions};
+    /// let article = Article::from_html("<div class='Article_Content'><p>正文</p></div>", ParseOptions::new())?;
     /// assert!(article.to_markdown().contains("正文"));
     /// # Ok::<(), ue_weave::Error>(())
     /// ```
-    pub fn from_html(html: &str, options: Options) -> Result<Self, Error> {
+    pub fn from_html(html: &str, options: ParseOptions) -> Result<Self, Error> {
         let document = crate::html::parse(html);
         Ok(Self::new(parse_document(&document, &options)?, Vec::new()))
     }
 
     /// 解析页面字节，按 BOM、HTTP 声明或 meta 标签识别编码。
-    pub fn from_bytes(bytes: &[u8], options: Options) -> Result<Self, Error> {
+    pub fn from_bytes(bytes: &[u8], options: ParseOptions) -> Result<Self, Error> {
         let input = input::Input::decode(bytes.to_vec(), "<bytes>".into(), None);
         let document = crate::html::parse(&input.html);
         Ok(Self::new(
@@ -629,7 +629,7 @@ impl Article {
     ///
     /// ```
     /// use ue_weave::{Article, Options, OutputOptions, Profile};
-    /// let article = Article::from_html("<div class='Article_Content'><p>正文</p></div>", Options::new())?;
+    /// let article = Article::from_html("<div class='Article_Content'><p>正文</p></div>", ParseOptions::new())?;
     /// let document = article.to_document_with(OutputOptions {
     ///     include_metadata: Some(true),
     ///     ..OutputOptions::new(Profile::Aggressive)
