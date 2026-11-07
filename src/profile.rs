@@ -184,8 +184,23 @@ impl Overrides {
     }
 }
 
+/// 复制导出所需的字段；来源节点不参与渲染，跳过可显著降低内存峰值。
+fn copy_for_output(source: &Ir) -> Ir {
+    Ir {
+        schema: source.schema.clone(),
+        tool: source.tool.clone(),
+        metadata: source.metadata.clone(),
+        blocks: source.blocks.clone(),
+        attachments: source.attachments.clone(),
+        images: source.images.clone(),
+        warnings: source.warnings.clone(),
+        original_nodes: Vec::new(),
+        source: source.source.clone(),
+    }
+}
+
 pub fn prepare(source: &Ir, settings: Settings) -> Output {
-    let mut ir = source.clone();
+    let mut ir = copy_for_output(source);
     let mut changes = Vec::new();
     transform(&mut ir.blocks, settings, &mut changes, true);
     diff(
@@ -199,7 +214,7 @@ pub fn prepare(source: &Ir, settings: Settings) -> Output {
 }
 
 pub fn prepare_documents(source: &Ir, settings: Settings) -> Output {
-    let mut ir = source.clone();
+    let mut ir = copy_for_output(source);
     let mut changes = Vec::new();
     transform(&mut ir.blocks, settings, &mut changes, false);
     Output { ir, changes }

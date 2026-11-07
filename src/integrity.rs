@@ -1,16 +1,62 @@
 //! 单独校验可见文字内容及顺序。
 use crate::diagnostic::{Details, Diagnostic, WarningKind};
 use scraper::{ElementRef, Html, Node};
+use std::collections::HashSet;
+
+/// 一次性收集“自身位于某类祖先之下”的节点，避免逐节点回溯祖先。
+#[derive(Default)]
+struct Exclusions {
+    /// 祖先属于脚本、嵌入内容、SVG、书签或 PDF 占位。
+    skipped: HashSet<ego_tree::NodeId>,
+    /// 自身或祖先属于预格式化内容。
+    literal: HashSet<ego_tree::NodeId>,
+    /// 祖先属于可用的 PDF 占位元素。
+    pdf: HashSet<ego_tree::NodeId>,
+    /// 祖先属于带 pdfsrc 的 PDF 占位元素，不论地址是否可用。
+    placeholder: HashSet<ego_tree::NodeId>,
+}
+
+fn exclusions(root: ElementRef) -> Exclusions {
+    let mut result = Exclusions::default();
+    for element in root.descendants().filter_map(ElementRef::wrap) {
+        let name = element.value().name();
+        let skipped = matches!(
+            name,
+            "script" | "style" | "iframe" | "object" | "embed" | "svg" | "math"
+        ) || crate::media::bookmark(element);
+        let literal = name == "pre" || crate::model::InlineKind::from_tag(name).is_some();
+        let pdf = crate::attachment::embedded_pdf(element).is_some();
+        let placeholder = element
+            .value()
+            .classes()
+            .any(|class| class == "wp_pdf_player")
+            && element.value().attr("pdfsrc").is_some();
+        if !(skipped || literal || pdf || placeholder) {
+            continue;
+        }
+        for node in element.descendants().skip(1) {
+            if skipped {
+                result.skipped.insert(node.id());
+            }
+            if literal {
+                result.literal.insert(node.id());
+            }
+            if pdf {
+                result.pdf.insert(node.id());
+            }
+            if placeholder {
+                result.placeholder.insert(node.id());
+            }
+        }
+    }
+    result
+}
 
 fn visible_text(root: ElementRef) -> String {
+    let excluded = exclusions(root);
     let mut text = String::new();
     for node in root.descendants() {
-        if node.ancestors().filter_map(ElementRef::wrap).any(|parent| {
-            matches!(
-                parent.value().name(),
-                "script" | "style" | "iframe" | "object" | "embed" | "svg" | "math"
-            ) || crate::media::bookmark(parent)
-        }) {
+        if excluded.skipped.contains(&node.id()) {
             continue;
         }
         if let Some(element) = ElementRef::wrap(node) {
@@ -32,16 +78,8 @@ fn visible_text(root: ElementRef) -> String {
             }
         }
         if let Node::Text(value) = node.value() {
-            let excluded = node
-                .ancestors()
-                .filter_map(ElementRef::wrap)
-                .any(|parent| crate::attachment::embedded_pdf(parent).is_some());
-            if !excluded {
-                let literal = node.ancestors().filter_map(ElementRef::wrap).any(|el| {
-                    el.value().name() == "pre"
-                        || crate::model::InlineKind::from_tag(el.value().name()).is_some()
-                });
-                if literal {
+            if !excluded.pdf.contains(&node.id()) {
+                if excluded.literal.contains(&node.id()) {
                     text.push_str(value);
                 } else {
                     text.push_str(&crate::rules::clean_sentinel(value));
@@ -137,19 +175,9 @@ fn resources(
     base: &Option<url::Url>,
 ) -> std::collections::BTreeMap<String, usize> {
     let mut result = std::collections::BTreeMap::new();
+    let excluded = exclusions(root);
     for node in root.descendants().filter_map(ElementRef::wrap) {
-        if node.ancestors().filter_map(ElementRef::wrap).any(|parent| {
-            matches!(
-                parent.value().name(),
-                "script" | "style" | "iframe" | "object" | "embed"
-            ) || crate::media::bookmark(parent)
-                || matches!(parent.value().name(), "svg" | "math")
-                || (parent
-                    .value()
-                    .classes()
-                    .any(|class| class == "wp_pdf_player")
-                    && parent.value().attr("pdfsrc").is_some())
-        }) {
+        if excluded.skipped.contains(&node.id()) || excluded.placeholder.contains(&node.id()) {
             continue;
         }
         let pdf = node.value().classes().any(|class| class == "wp_pdf_player");

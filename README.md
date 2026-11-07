@@ -145,7 +145,7 @@ typst compile output/reconstructed.typ output/result.pdf
 use ue_weave::{Article, Options, OutputOptions, Profile};
 
 let article = Article::from_html(html, Options::new())?;
-let document = article.to_document(OutputOptions::new(Profile::Aggressive));
+let document = article.to_document_with(OutputOptions::new(Profile::Aggressive));
 
 println!("{}", document.markdown);
 ```

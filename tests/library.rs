@@ -133,7 +133,7 @@ fn library_output_matches_cli_profiles() {
             }
             let output = command.output().unwrap();
             assert!(output.status.success(), "{profile:?}");
-            let expected = article.to_document(OutputOptions {
+            let expected = article.to_document_with(OutputOptions {
                 include_metadata: Some(metadata),
                 ..OutputOptions::new(profile)
             });
@@ -150,7 +150,7 @@ fn library_output_matches_cli_profiles() {
 }
 
 #[test]
-fn single_format_helpers_match_to_document() {
+fn single_format_helpers_match_to_document_with() {
     let bytes = std::fs::read("fixtures/seu-585911.html").unwrap();
     let article = Article::from_bytes(&bytes, Options::new()).unwrap();
     for profile in [
@@ -158,7 +158,7 @@ fn single_format_helpers_match_to_document() {
         Profile::Balanced,
         Profile::Aggressive,
     ] {
-        let document = article.to_document(OutputOptions::new(profile));
+        let document = article.to_document_with(OutputOptions::new(profile));
         assert_eq!(
             article.to_html_with(OutputOptions::new(profile)),
             document.html
@@ -172,7 +172,7 @@ fn single_format_helpers_match_to_document() {
             document.typst
         );
     }
-    let default = article.to_document(OutputOptions::default());
+    let default = article.to_document_with(OutputOptions::default());
     assert_eq!(article.to_html(), default.html);
     assert_eq!(article.to_markdown(), default.markdown);
     assert_eq!(article.to_typst(), default.typst);
@@ -240,7 +240,7 @@ fn output_options_match_cli_overrides() {
             .output()
             .unwrap();
         assert!(output.status.success(), "{label}");
-        let expected = article.to_document(options);
+        let expected = article.to_document_with(options);
         for (name, actual) in [
             ("reconstructed.html", expected.html),
             ("reconstructed.md", expected.markdown),
@@ -278,7 +278,7 @@ fn document_reports_export_changes() {
     let page = "<div class='Article_Content'><p><span style=\"font-family:微软雅黑, undefinedMicrosoft YaHeiundefined\">甲</span></p>\
         <table><tr><td>a</td><td>b</td></tr></table></div>";
     let article = Article::from_html(page, Options::new()).unwrap();
-    let document = article.to_document(OutputOptions {
+    let document = article.to_document_with(OutputOptions {
         profile: Profile::Aggressive,
         ..OutputOptions::default()
     });

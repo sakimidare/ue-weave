@@ -17,6 +17,13 @@ pub fn append_diagnostics(ir: &mut Ir) {
     let mut literal_nodes = std::collections::HashSet::new();
     let mut converted_subtrees = std::collections::HashSet::new();
     let mut ueditor_code = std::collections::HashSet::new();
+    let attachment_nodes: std::collections::HashSet<&str> = ir
+        .attachments
+        .iter()
+        .filter_map(|attachment| attachment["source_nodes"].as_array())
+        .flatten()
+        .filter_map(|id| id.as_str())
+        .collect();
     for node in &ir.original_nodes {
         let id = &node["id"];
         let tag = node["tag"].as_str().unwrap_or("");
@@ -66,11 +73,7 @@ pub fn append_diagnostics(ir: &mut Ir) {
         if literal {
             literal_nodes.insert(id.as_str().unwrap_or("").to_owned());
         }
-        let attachment_node = ir.attachments.iter().any(|attachment| {
-            attachment["source_nodes"]
-                .as_array()
-                .is_some_and(|nodes| nodes.contains(id))
-        });
+        let attachment_node = attachment_nodes.contains(id.as_str().unwrap_or(""));
         if matches!(tag, "span" | "div")
             && node["children"].as_array().is_some_and(Vec::is_empty)
             && !attachment_node

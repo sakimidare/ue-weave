@@ -68,7 +68,8 @@ fn exporters_are_pinned() {
     let _: fn(&Article, OutputOptions) -> String = Article::to_markdown_with;
     let _: fn(&Article) -> String = Article::to_typst;
     let _: fn(&Article, OutputOptions) -> String = Article::to_typst_with;
-    let _: fn(&Article, OutputOptions) -> Document = Article::to_document;
+    let _: fn(&Article) -> Document = Article::to_document;
+    let _: fn(&Article, OutputOptions) -> Document = Article::to_document_with;
     let _: fn(&Article) -> serde_json::Value = Article::to_json;
     let _: fn(&Article) -> Vec<u8> = Article::to_json_bytes;
     let _: fn(&Article) -> serde_json::Value = Article::to_json_compact;

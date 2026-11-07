@@ -588,19 +588,24 @@ impl Article {
             .typst
     }
 
-    /// 一次生成三种文档，行为与命令行默认输出一致。
+    /// 按默认选项一次生成三种文档，行为与命令行默认输出一致。
+    pub fn to_document(&self) -> Document {
+        self.to_document_with(OutputOptions::default())
+    }
+
+    /// 按指定选项一次生成三种文档，并返回导出阶段的格式变更。
     ///
     /// ```
     /// use ue_weave::{Article, Options, OutputOptions, Profile};
     /// let article = Article::from_html("<div class='Article_Content'><p>正文</p></div>", Options::new())?;
-    /// let document = article.to_document(OutputOptions {
+    /// let document = article.to_document_with(OutputOptions {
     ///     include_metadata: Some(true),
     ///     ..OutputOptions::new(Profile::Aggressive)
     /// });
     /// assert!(document.markdown.contains("正文"));
     /// # Ok::<(), ue_weave::Error>(())
     /// ```
-    pub fn to_document(&self, options: OutputOptions) -> Document {
+    pub fn to_document_with(&self, options: OutputOptions) -> Document {
         let settings = options.resolve();
         let (documents, changes) = self.render(
             settings,
