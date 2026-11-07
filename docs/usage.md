@@ -178,6 +178,8 @@ ue-weave URL -o out --log W0014=list
 
 编号不区分大小写，`w0001=summary` 与 `W0001=summary` 相同。设置某个编号只调整该编号，其他诊断沿用已有设置。例如，`--log w0001=summary` 设置编码识别警告的显示方式，样式警告 W0014 仍按默认方式汇总。只想显示 W0001 时使用 `--log off,w0001=summary`；本次没有 W0001 时就不显示该项。
 
+编号必须存在，例如 `W9999=off` 会返回 E0017。错误始终显示，`E0001=off` 等错误编号设置也会返回 E0017。
+
 默认级别：warning 为 `summary`；带地址或位置的编号（`W0002`、`W0003`、`W0004`、`W0005`、`W0006`、`W0015`）为 `list`；其余 note 为 `off`。运行时提示 `N0028`（重试）、`N0029`（查看详情）、`N0030`（解释提示）默认显示，可用 `note=off`、`N0030=off` 或 `--quiet` 关闭。进度行默认关闭。错误始终输出，不受日志开关影响。
 
 `--quiet` 将全局预设为 `off`，`--verbose` 将全局预设为 `context`。显式的 `--log` 设置覆盖快捷预设，与这两个参数的位置无关。`--quiet` 和 `--verbose` 互斥，同时使用会报错。
@@ -208,7 +210,32 @@ ue-weave URL -o out --quiet --log note=list
 
 `--log all=summary`（简写为 `--log summary`）也会隐藏进度行。需要同时显示进度时，使用 `--log all=summary,progress=list`；类别设置 `progress=list` 优先于全局设置。`--log progress=off` 可与上下文日志一起使用，HTML 与输出文字的排版宽度保持一致。
 
-日志开关只影响终端输出，不改变 `--json` 结果、`report.json` 内容和退出码。
+日志开关只影响终端日志，不改变 `--json` 结果和退出码。
+
+## JSON 运行报告
+
+`--json` 将运行报告写入标准输出，日志写入标准错误。可分别保存：
+
+```sh
+ue-weave URL -o output --json --log style=list > result.json 2> run.log
+```
+
+网页、本地 HTML、正文 JSON 再导出及失败结果使用相同字段。没有适用值时填 `null`，没有记录的数组为空。
+
+| 字段 | 内容 |
+| --- | --- |
+| `status` | `ok` 完成；`partial` 已导出，但有下载失败或正文、资源完整性问题；`error` 运行失败 |
+| `code`、`error`、`network` | 运行失败的编号、说明和网络详情；成功及部分成功时为 `null` |
+| `source`、`output` | 输入来源和输出目录 |
+| `selector`、`requested_selector` | 实际及请求的正文选择器；正文 JSON 再导出时为 `null` |
+| `counts` | 正文块（含嵌套块）、图片和附件数量；失败时为 `null` |
+| `warnings`、`notes` | 分别保存警告和提示，包含编号与具体信息 |
+| `image_errors`、`attachment_errors` | 图片、附件下载失败记录，也包含在 `warnings` 中 |
+| `content_integrity`、`resource_integrity` | 文字顺序与资源完整性检查结果；未检查时为 `null` |
+| `output_profile`、`output_options` | 输出预设和实际开关 |
+| `output_changes` | 本次输出记录的格式调整 |
+
+`ok` 和 `partial` 的退出码为 0，运行失败为 1，参数解析失败为 2。自动验收时检查 `status`，并查看 `image_errors`、`attachment_errors` 和完整性结果。普通样式警告不会将状态改为 `partial`。文章内容保存在 `reconstructed.json` 中。
 
 ## 站点选择器配置
 

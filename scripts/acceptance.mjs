@@ -101,6 +101,9 @@ for (const [url, title] of articles) {
     const ir = JSON.parse(await readFile(join(destination, 'reconstructed.json'), 'utf8'));
     record.title = ir.metadata.title || title || id;
     const report = JSON.parse(result.stdout);
+    record.status = report.status;
+    record.image_errors = report.image_errors;
+    record.attachment_errors = report.attachment_errors;
     record.integrity = report.content_integrity?.value;
     record.warning_count = report.warnings.filter(w => w.level === 'warning').length;
     const pdf = await run('typst', ['compile', join(destination, 'reconstructed.typ'), join(destination, 'result.pdf')], 60000);

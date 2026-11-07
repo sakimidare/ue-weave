@@ -132,9 +132,9 @@ HTTP header 名称、值或命令行的 NAME=VALUE 格式有误，或尝试覆�
 
 ## E0017 日志开关无效
 
-`--log` 的写法无法解析，或使用了未知的类别或级别。
+`--log` 的写法无法解析，使用了未知的类别、编号或级别，或尝试设置始终显示的错误编号。
 
-例子：`--log style=loud` 使用了不存在的级别；`--log asset=list` 使用了不存在的类别。
+例子：`--log style=loud` 使用了不存在的级别；`--log asset=list` 使用了不存在的类别；`--log W9999=off` 的编号不存在；`--log E0001=off` 尝试关闭错误。
 
 处理：使用 `[topic[.severity]=]level`，省略类别时作用于全部诊断，例如 `--log summary`。领域可用：`all`、`progress`、`warning`、`note`、`network`、`encoding`、`image`、`attachment`、`style`、`structure`、`integrity`、`inference`、`word`，也可以直接写编号如 `W0014`。级别可用：`off`、`summary`、`list`、`context`。需要按严重度细分时写成 `style.warning=list` 或 `style.note=off`。
 
@@ -784,12 +784,12 @@ sdfield 标签保存页码、日期等文档字段，导出保留当前显示文
 
 处理：核对显示的附件名称。没有标题的空链接保留原地址；可在正文 JSON 中补充文字。
 
-## N0037 已跳过无输出影响的样式
+## N0037 已跳过浏览器排版样式
 
-该样式只影响浏览器中的视觉或布局，正文文字、图片和链接不受影响，导出时忽略。
+导出时跳过这项浏览器排版设置，文字内容继续保留。字形、间距和换行效果可能随输出格式变化。
 
 例子：`text-wrap-mode: wrap`、`--size: 12px`、`font-feature-settings: "kern"`、`padding: 4px`。
 
-`white-space: pre*` 和 `display: none` 会影响内容呈现，仍按 W0014 报告。
+未支持的透明度、背景图片、定位、裁剪、变换、`white-space: pre*` 和 `display: none` 按 W0014 报告；可执行的 CSS 值仍按 W0013 报告。保守模式同样保留这些警告，便于核对显示效果。
 
-处理：需要核对被跳过的声明时，使用 `--log N0037=context`。使用 `--json` 时，可在运行结果的 `warnings` 数组中查找 `code` 为 `N0037`、`level` 为 `note` 的记录，其中包含属性名和原值。导出的正文 JSON 保存文章内容，诊断信息位于运行结果中。
+处理：需要核对被跳过的声明时，使用 `--log N0037=context`。使用 `--json` 时，可在运行结果的 `notes` 数组中查找 `code` 为 `N0037` 的记录，其中包含属性名和原值。导出的正文 JSON 保存文章内容，诊断信息位于运行结果中。

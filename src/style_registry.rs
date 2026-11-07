@@ -32,7 +32,6 @@ pub const BENIGN_STYLES: &[&str] = &[
     "margin-right",
     "margin-bottom",
     "margin-left",
-    "background-image",
     "background-position",
     "background-position-x",
     "background-position-y",
@@ -44,10 +43,6 @@ pub const BENIGN_STYLES: &[&str] = &[
     "background-blend-mode",
     "box-shadow",
     "text-shadow",
-    "filter",
-    "backdrop-filter",
-    "opacity",
-    "transform",
     "transform-origin",
     "transition",
     "animation",
@@ -56,12 +51,7 @@ pub const BENIGN_STYLES: &[&str] = &[
     "cursor",
     "pointer-events",
     "user-select",
-    "position",
-    "float",
     "clear",
-    "overflow",
-    "overflow-x",
-    "overflow-y",
     "width",
     "height",
     "min-width",
@@ -86,7 +76,13 @@ pub fn benign_value(property: &str, value: &str) -> bool {
     let value = value.trim().to_ascii_lowercase();
     match property {
         "white-space" => matches!(value.as_str(), "normal" | "nowrap"),
-        "display" => value != "none",
+        "display" => matches!(value.as_str(), "block" | "inline" | "inline-block"),
+        "opacity" => value == "1",
+        "position" => value == "static",
+        "float" | "filter" | "backdrop-filter" | "transform" | "background-image" => {
+            value == "none"
+        }
+        "overflow" | "overflow-x" | "overflow-y" => value == "visible",
         _ => false,
     }
 }

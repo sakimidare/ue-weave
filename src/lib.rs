@@ -35,6 +35,7 @@ mod parser;
 mod profile;
 mod regenerate;
 mod renderer;
+mod report;
 #[cfg(test)]
 mod robustness;
 mod rules;

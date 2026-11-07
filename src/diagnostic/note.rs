@@ -6,7 +6,7 @@ use thiserror::Error;
 pub enum NoteKind {
     #[error("已使用附件标题补全链接文字")]
     AttachmentLabel,
-    #[error("已跳过无输出影响的样式")]
+    #[error("已跳过浏览器排版样式")]
     IgnoredStyle,
     #[error("已跳过页面分页样式")]
     PaginationStyle,

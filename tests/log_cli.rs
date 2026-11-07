@@ -262,6 +262,7 @@ fn log_switches_do_not_change_json_payload() {
     let plain: serde_json::Value = serde_json::from_slice(&base.stdout).unwrap();
     let loud: serde_json::Value = serde_json::from_slice(&loud.stdout).unwrap();
     assert_eq!(plain["warnings"], loud["warnings"]);
+    assert_eq!(plain["notes"], loud["notes"]);
     assert_eq!(plain["counts"], loud["counts"]);
     let a = fs::read(temporary.path().join("plain/reconstructed.json")).unwrap();
     let b = fs::read(temporary.path().join("loud/reconstructed.json")).unwrap();

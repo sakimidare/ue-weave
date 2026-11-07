@@ -101,6 +101,12 @@ fn parse_target(name: &str) -> Result<Target, String> {
         return Ok(Target::Severity(level));
     }
     if is_code(name) {
+        if crate::explain::lookup(name).is_err() {
+            return Err(format!("日志编号不存在：{name}；例如 W0014、N0037"));
+        }
+        if name.starts_with(['E', 'e']) {
+            return Err(format!("错误编号 {name} 始终显示；请选择 W 或 N 编号"));
+        }
         return Ok(Target::Code(name.to_ascii_uppercase()));
     }
     if let Some((topic, level)) = name.split_once('.') {
@@ -326,6 +332,9 @@ mod tests {
     #[test]
     fn invalid_specs_report_the_offending_part() {
         for (spec, expected) in [
+            ("W9999=off", "日志编号不存在"),
+            ("N9999=list", "日志编号不存在"),
+            ("E0001=off", "始终显示"),
             ("style", "日志开关无效"),
             ("style=loud", "未知日志级别"),
             ("nonsense=list", "未知日志类别"),

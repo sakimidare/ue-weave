@@ -235,13 +235,7 @@ fn command() -> clap::Command {
 
 fn report_error(error: &RecoverError, json: bool, filter: &log::Filter, color: log::Color) {
     if json {
-        println!(
-            "{}",
-            serde_json::json!({
-                "status": "error", "code": error.code(), "error": error.to_string(),
-                "network": match error { RecoverError::Network(error) => error.details(), _ => serde_json::Value::Null }
-            })
-        );
+        crate::report::Report::failed(error).print();
     }
     log::Logger::with_filter(filter.clone(), color).error(error);
 }

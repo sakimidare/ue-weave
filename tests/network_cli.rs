@@ -349,6 +349,45 @@ fn page_and_attachment_retry_and_local_config_use_same_pipeline() {
 }
 
 #[test]
+fn failed_asset_downloads_report_partial_and_keep_documents() {
+    let page = "<div class='Article_Content'><p>正文</p><img src='/missing.png'><a download href='/missing.pdf'>附件</a></div>";
+    let (url, server) = serve(vec![
+        (200, page.into()),
+        (404, "missing".into()),
+        (404, "missing".into()),
+    ]);
+    let dir = tempfile::tempdir().unwrap();
+    let result = Command::new(env!("CARGO_BIN_EXE_ue-weave"))
+        .arg(url)
+        .args([
+            "--allow-private-network",
+            "--download-images",
+            "--download-attachments",
+            "--retries",
+            "0",
+            "--json",
+            "--log",
+            "off",
+            "--output",
+        ])
+        .arg(dir.path())
+        .output()
+        .unwrap();
+    assert_eq!(server.join().unwrap(), 3);
+    assert!(result.status.success());
+    let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_eq!(report["status"], "partial");
+    assert_eq!(report["image_errors"].as_array().unwrap().len(), 1);
+    assert_eq!(report["attachment_errors"].as_array().unwrap().len(), 1);
+    assert!(report["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|w| w["code"] == "W0005"));
+    assert!(dir.path().join("reconstructed.html").is_file());
+}
+
+#[test]
 fn exhausted_retries_produce_structured_error() {
     let (url, server) = serve(vec![(503, "".into()), (503, "".into())]);
     let dir = std::env::temp_dir().join(format!("ue-http-error-{}", std::process::id()));

@@ -2,7 +2,6 @@
 use crate::network_policy::Client;
 use crate::{
     cli::Args,
-    diagnostic::Diagnostic,
     downloader,
     error::{RecoverError, Result},
     explain, export, input,
@@ -181,21 +180,15 @@ fn parse(input: input::Input, args: &Args, logger: &Logger) -> Result<Parsed> {
     })
 }
 
-#[derive(Default)]
-struct AssetErrors {
-    attachments: Vec<Diagnostic>,
-    images: Vec<Diagnostic>,
-}
-
 fn process_assets(
     ir: &mut Ir,
     args: &Args,
     output: &Path,
     network: Option<&Network>,
     logger: &Logger,
-) -> Result<AssetErrors> {
+) -> Result<()> {
     let Some(network) = network else {
-        return Ok(AssetErrors::default());
+        return Ok(());
     };
     let attachments = if args.download_attachments {
         downloader::download_attachments(ir, output, &network.client, network.policy, logger)?
@@ -209,10 +202,7 @@ fn process_assets(
     };
     ir.warnings
         .extend(attachments.iter().chain(&images).cloned());
-    Ok(AssetErrors {
-        attachments,
-        images,
-    })
+    Ok(())
 }
 
 fn write_files(path: &Path, files: Vec<(String, Vec<u8>)>) -> Result<()> {
@@ -227,13 +217,7 @@ fn write_files(path: &Path, files: Vec<(String, Vec<u8>)>) -> Result<()> {
     Ok(())
 }
 
-fn report(
-    parsed: &Parsed,
-    errors: &AssetErrors,
-    rendered: &profile::Output,
-    args: &Args,
-    logger: &Logger,
-) -> Result<()> {
+fn report(parsed: &Parsed, rendered: &profile::Output, args: &Args, logger: &Logger) -> Result<()> {
     let ir = &parsed.ir;
     logger.warnings(&ir.warnings, &ir.original_nodes, &rendered.ir);
     logger.done(
@@ -242,23 +226,11 @@ fn report(
         ir.images.len(),
     );
     if args.json {
-        let result = serde_json::json!({
-            "status": "ok", "source": parsed.source, "selector": parsed.selector,
-            "requested_selector": parsed.requested_selector, "warnings": ir.warnings,
-            "output_profile": args.profile, "output_options": args.output_options.resolve(args.profile),
-            "attachment_errors": errors.attachments, "image_errors": errors.images,
-            "content_integrity": ir.metadata.get("content_integrity"),
-            "resource_integrity": ir.metadata.get("resource_integrity"),
-            "output_changes": rendered.changes,
-            "counts": {"blocks": ir.blocks.len(), "attachments": ir.attachments.len(), "images": ir.images.len()}
-        });
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&result).map_err(|source| RecoverError::Serialize {
-                file: "stdout".into(),
-                source
-            })?
-        );
+        let mut result = crate::report::Report::completed(ir, rendered, args);
+        result.source = serde_json::json!(parsed.source);
+        result.selector = serde_json::json!(parsed.selector);
+        result.requested_selector = serde_json::json!(parsed.requested_selector);
+        result.print();
     }
     logger.finish_diagnostics(&ir.warnings);
     Ok(())
@@ -297,7 +269,7 @@ pub(crate) fn run(args: &Args) -> Result<()> {
             .transpose()?;
     logger.stage("input", "开始读取输入");
     let mut parsed = parse(source.load(network.as_ref(), &logger)?, args, &logger)?;
-    let errors = process_assets(&mut parsed.ir, args, output, network.as_ref(), &logger)?;
+    process_assets(&mut parsed.ir, args, output, network.as_ref(), &logger)?;
     let settings = args.output_options.resolve(args.profile);
     let rendered = if args.json {
         profile::prepare(&parsed.ir, settings)
@@ -306,5 +278,5 @@ pub(crate) fn run(args: &Args) -> Result<()> {
     };
     let documents = export::render(&rendered.ir, settings, &args.exports);
     write_files(output, args.exports.files(documents, &parsed.ir)?)?;
-    report(&parsed, &errors, &rendered, args, &logger)
+    report(&parsed, &rendered, args, &logger)
 }

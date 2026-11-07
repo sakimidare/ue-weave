@@ -100,17 +100,9 @@ pub fn run(path: &Path, args: &crate::cli::Args, output: &Path) -> Result<()> {
         ir.images.len(),
     );
     if json {
-        println!(
-            "{}",
-            serde_json::json!({
-                "status": "ok",
-                "source": ir.source,
-                "warnings": ir.warnings,
-                "output_profile": profile,
-                "output_options": settings,
-                "counts": {"blocks":ir.blocks.len(),"attachments":ir.attachments.len(),"images":ir.images.len()},
-            })
-        );
+        let mut report = crate::report::Report::completed(&ir, &rendered, args);
+        report.source = serde_json::json!(path);
+        report.print();
     }
     logger.finish_diagnostics(&ir.warnings);
     Ok(())

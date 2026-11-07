@@ -632,8 +632,7 @@ pub fn append_diagnostics(ir: &mut Ir) {
                                     inferred: Some(false),
                                     confidence: Some("high".to_owned()),
                                     reason: Some(
-                                        "该声明只影响浏览器中的视觉或布局，正文与资源不受影响"
-                                            .to_owned(),
+                                        "保留文字内容，字形、间距和换行由输出格式处理".to_owned(),
                                     ),
                                     source_nodes: vec![id.as_str().unwrap_or_default().to_owned()],
                                     ..Default::default()
@@ -806,5 +805,32 @@ mod tests {
                 && ["text-wrap-mode", "--size", "padding"]
                     .contains(&w["attribute"].as_str().unwrap_or(""))
         }));
+    }
+
+    #[test]
+    fn visual_content_styles_are_reported_before_profile_selection() {
+        let html = scraper::Html::parse_document("<div class='Article_Content'><p style='opacity:0;position:absolute;overflow:hidden;transform:scale(0);display:grid;background-image:linear-gradient(red,blue)'>正文</p></div>");
+        let ir = crate::parser::parse(&html, ".Article_Content", false, None).unwrap();
+        for attribute in [
+            "opacity",
+            "position",
+            "overflow",
+            "transform",
+            "display",
+            "background-image",
+        ] {
+            assert!(
+                ir.warnings
+                    .iter()
+                    .any(|w| w["attribute"] == attribute && w["level"] == "warning"),
+                "{attribute}"
+            );
+            assert!(
+                !ir.warnings
+                    .iter()
+                    .any(|w| w["attribute"] == attribute && w["kind"] == "ignored-style"),
+                "{attribute}"
+            );
+        }
     }
 }

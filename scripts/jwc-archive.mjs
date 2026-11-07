@@ -132,6 +132,7 @@ for(let offset=0;offset<articles.length;offset+=3) {
       record.failure_kind=report.code==='E0015'?'restricted':report.code==='E0016'?'empty-source':'error';
     }
     if(record.ok) {
+      record.status=report.status;
       const ir=JSON.parse(await readFile(join(destination,'reconstructed.json'),'utf8'));
       record.title=ir.metadata.title||article.title;
       record.warning_count=report.warnings.filter(w=>w.level==='warning').length;

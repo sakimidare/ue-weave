@@ -34,6 +34,8 @@ UEditor 的保存结果是 HTML。结构还原以这份 HTML 中的内容为依�
 
 `--json` 的终端输出包含格式预设、开关和格式修改记录，以及推断、未知项和下载错误。终端结果中的 `content_integrity` 记录正文文字及顺序的检查结果。
 
+`report.rs` 定义各输入方式及失败路径共用的运行报告。`warnings` 与 `notes` 按枚举级别分开；下载失败、正文或资源完整性不匹配产生 `partial`。报告字段和退出码见[JSON 运行报告](usage.md#json-运行报告)。
+
 终端结果中的 `resource_integrity` 记录还原前后图片、超链接和 PDF 地址的数量是否一致。
 
 ### 资源下载

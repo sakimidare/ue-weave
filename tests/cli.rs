@@ -342,7 +342,12 @@ fn numbered_diagnostics_match_terminal_and_json() {
     assert!(output.status.success());
     let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let warnings = result["warnings"].as_array().unwrap();
+    let warnings: Vec<_> = result["warnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain(result["notes"].as_array().unwrap())
+        .collect();
     assert!(!warnings.is_empty());
     for warning in warnings {
         let code = warning["code"].as_str().unwrap();
