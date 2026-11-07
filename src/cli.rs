@@ -151,7 +151,9 @@ pub fn main() {
     if let Err(error) = pipeline::run(&args) {
         let filter = args.log_filter().unwrap_or_default();
         report_error(&error, args.print_json_result, &filter, args.color);
-        std::process::exit(1);
+        // 参数错误与 clap 的退出码保持一致，便于脚本区分参数问题和处理失败。
+        let code = if error.code() == "E0001" { 2 } else { 1 };
+        std::process::exit(code);
     }
 }
 
@@ -225,7 +227,7 @@ fn command() -> clap::Command {
         .filter(|arg| {
             !matches!(
                 arg.get_id().as_str(),
-                "explain" | "color" | "help" | "version"
+                "explain" | "color" | "log" | "quiet" | "verbose" | "help" | "version"
             )
         })
         .map(|arg| arg.get_id().clone())

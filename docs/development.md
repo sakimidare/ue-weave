@@ -6,7 +6,9 @@
 
 ## 库接口与执行流程
 
-`lib.rs` 提供 `Article::from_html`、`html`、`markdown`、`typst` 和 `json`，调用方可直接解析已加载的文章并生成文档。库错误通过 `Error::code()` 返回与 CLI 一致的编号。公开 API 使用中文文档，由 `missing_docs` 检查覆盖。
+`lib.rs` 提供 `Article::from_html`、`from_bytes`、`from_json`、`from_json_bytes`，以及 `to_html`、`to_markdown`、`to_typst`、`to_document`、`to_json` 等导出方法；`Options` 控制解析，`OutputOptions` 控制预设和格式开关。库错误通过 `Error::code()` 返回与 CLI 一致的编号。公开 API 使用中文文档，由 `missing_docs` 检查覆盖。
+
+公开接口由 `tests/api.rs` 固化：所有构造器、访问器、导出方法、字段名和返回类型都以函数指针或类型断言写死，签名变化会直接导致该测试编译失败。修改公开 API 时需同步更新该文件并在提交信息中说明。`Metadata`、`Document`、`Attachment`、`Image` 和 `Profile` 标记了 `non_exhaustive`，新增字段或预设不视为破坏性变更；`OutputOptions` 保持可用结构体字面量构造，新增开关需要评估 semver。
 
 `main.rs` 调用命令入口；`cli.rs` 管理 clap 参数和退出状态；`pipeline.rs` 依次读取输入、解析正文、处理资源、生成文件和汇报结果。URL 输入与本地文件通过 `Source` 枚举区分。一次处理按需创建一个网络客户端，网页与资源下载共用客户端及重试设置。
 

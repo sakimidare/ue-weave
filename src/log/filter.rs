@@ -166,6 +166,11 @@ impl Filter {
             });
         }
         for spec in specs {
+            if spec.trim().is_empty() {
+                return Err(
+                    "日志开关为空；格式为 [topic[.severity]=]level，例如 --log style=list".into(),
+                );
+            }
             for part in spec.split(',') {
                 let part = part.trim();
                 if part.is_empty() {

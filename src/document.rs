@@ -6,6 +6,8 @@ const METADATA: &[&str] = &["title", "date", "author", "source", "publisher", "u
 const ASSET: &[&str] = &[
     "href",
     "src",
+    "remote_href",
+    "remote_src",
     "text",
     "title",
     "alt",
@@ -93,6 +95,34 @@ pub fn from_analysis(ir: &Ir) -> Value {
         }
     }
     document
+}
+
+/// 生成省略来源节点的正文，体积更小，仍可交给 `from_analysis` 的读取路径。
+pub fn from_analysis_compact(ir: &Ir) -> Value {
+    let mut document = from_analysis(ir);
+    if let Some(object) = document.as_object_mut() {
+        object.remove("original_nodes");
+    }
+    strip_sources(&mut document);
+    document
+}
+
+fn strip_sources(value: &mut Value) {
+    match value {
+        Value::Object(map) => {
+            map.remove("source_nodes");
+            map.remove("source_node");
+            for child in map.values_mut() {
+                strip_sources(child);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                strip_sources(item);
+            }
+        }
+        _ => {}
+    }
 }
 
 pub fn validate(value: &Value) -> crate::error::Result<()> {

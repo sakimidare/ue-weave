@@ -788,3 +788,67 @@ fn missing_input_emits_json_error_and_failure_exit() {
     assert_eq!(error["status"], "error");
     assert!(error["error"].as_str().unwrap().contains("URL"));
 }
+
+#[test]
+fn network_options_require_network_activity() {
+    let temporary = common::directory();
+    for args in [
+        vec!["--header", "X-Test=1"],
+        vec!["--headers-file", "missing-headers.json"],
+        vec!["--resolve", "example.org=10.0.0.1"],
+    ] {
+        let output = common::command()
+            .args(["--input", "fixtures/seu-585911.html", "--output"])
+            .arg(temporary.path())
+            .args(&args)
+            .output()
+            .unwrap();
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(stderr.contains("E0001"), "{args:?}: {stderr}");
+        assert!(
+            stderr.contains("只用于网页或资源请求") || stderr.contains("只用于网页或资源"),
+            "{args:?}: {stderr}"
+        );
+    }
+}
+
+#[test]
+fn argument_errors_share_the_clap_exit_code() {
+    let temporary = common::directory();
+    let output = common::command()
+        .args([
+            "https://example.org",
+            "--input",
+            "fixtures/seu-585911.html",
+            "--output",
+        ])
+        .arg(temporary.path())
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("E0001"));
+}
+
+#[test]
+fn explain_accepts_logging_options() {
+    let output = common::command()
+        .args(["--explain", "N0002", "--log", "style=off", "--quiet"])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{:?}", output);
+    assert!(String::from_utf8_lossy(&output.stdout).starts_with("N0002"));
+}
+
+#[test]
+fn empty_log_switch_is_rejected() {
+    let temporary = common::directory();
+    let output = common::command()
+        .args(["--input", "fixtures/seu-585911.html", "--output"])
+        .arg(temporary.path())
+        .args(["--log", ""])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("E0017"));
+}

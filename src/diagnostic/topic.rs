@@ -54,7 +54,6 @@ impl Topic {
         })
     }
 
-    #[cfg(test)]
     pub fn name(self) -> &'static str {
         match self {
             Self::Progress => "progress",

@@ -136,3 +136,25 @@ typst compile output/reconstructed.typ output/result.pdf
 - `--help`：查看全部参数。
 
 详细说明见[使用手册](docs/usage.md)。实现方式、测试和验收脚本见[开发说明](docs/development.md)。
+
+## 作为库使用
+
+项目同时是 Rust 库：解析已抓取或已保存的 HTML，直接生成文档。
+
+```rust
+use ue_weave::{Article, Options, OutputOptions, Profile};
+
+let article = Article::from_html(html, Options::new())?;
+let document = article.to_document(OutputOptions::new(Profile::Aggressive));
+
+println!("{}", document.markdown);
+```
+
+- `Options`：选择器、原网页地址、是否推断；
+- `Article::from_bytes`：自动识别 BOM 与 `<meta charset>`；
+- `Article::from_json` / `from_json_bytes`：读取 `--formats ir` 导出的正文，对应 `to_json` 与 `to_json_bytes`；
+- `to_json_compact`：省略来源节点，体积约为完整 JSON 的四分之一，仍可被 `from_json` 读取；
+- `metadata()`、`diagnostics()`、`attachments()`、`images()`：结构化读取；
+- `OutputOptions`：预设、元数据头，以及全部 `strip-*` 细分开关。
+
+完整接口见 `cargo doc --open`。

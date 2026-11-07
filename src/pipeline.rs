@@ -262,11 +262,20 @@ pub(crate) fn run(args: &Args) -> Result<()> {
         return regenerate::run(path, args, output);
     }
     let source = Source::from_args(args)?;
+    let online =
+        matches!(source, Source::Url(_)) || args.download_images || args.download_attachments;
+    if !online && (!args.header.is_empty() || args.headers_file.is_some()) {
+        return Err(RecoverError::Arguments(
+            "--header 与 --headers-file 只用于网页或资源请求；本地 HTML 不发送请求头".into(),
+        ));
+    }
+    if !online && !args.resolve.is_empty() {
+        return Err(RecoverError::Arguments(
+            "--resolve 只用于网页或资源请求；本地 HTML 不解析域名".into(),
+        ));
+    }
     let logger = Logger::with_filter(args.log_filter()?, args.color);
-    let network =
-        (matches!(source, Source::Url(_)) || args.download_images || args.download_attachments)
-            .then(|| Network::new(args))
-            .transpose()?;
+    let network = online.then(|| Network::new(args)).transpose()?;
     logger.stage("input", "开始读取输入");
     let mut parsed = parse(source.load(network.as_ref(), &logger)?, args, &logger)?;
     process_assets(&mut parsed.ir, args, output, network.as_ref(), &logger)?;

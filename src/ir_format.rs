@@ -41,11 +41,15 @@ fn invalid(field: &str, reason: &str) -> RecoverError {
 }
 
 pub fn read(bytes: &[u8], path: &Path) -> Result<Ir> {
-    let mut value: Value =
-        serde_json::from_slice(bytes).map_err(|source| RecoverError::ReadIr {
-            path: path.into(),
-            source,
-        })?;
+    let value: Value = serde_json::from_slice(bytes).map_err(|source| RecoverError::ReadIr {
+        path: path.into(),
+        source,
+    })?;
+    from_value(value, path)
+}
+
+/// 从已解析的 JSON 读取正文，避免再次序列化和反序列化。
+pub fn from_value(mut value: Value, path: &Path) -> Result<Ir> {
     value
         .as_object()
         .ok_or_else(|| invalid("$", "需要 JSON 对象"))?;

@@ -102,8 +102,16 @@ ue-weave --input page.html --output output/ \
 | `--print-json-result` | 以 JSON 输出运行结果摘要 |
 | `--verbose` | 输出详细阶段日志；等价于 `--log all=context` |
 | `--quiet` | 只输出错误；等价于 `--log all=off` |
-| `--log <[TOPIC=]LEVEL>` | 日志开关，可重复或用逗号分隔 |
+| `--log <[TOPIC[.SEVERITY]=]LEVEL>` | 日志开关，可重复或用逗号分隔 |
 | `--color <MODE>` | 日志颜色：auto 自动（默认）、always 始终、never 关闭 |
+
+退出状态：
+
+| 状态 | 含义 |
+| --- | --- |
+| `0` | 处理完成 |
+| `1` | 处理失败，例如正文为空、读取失败、配置或日志开关无效 |
+| `2` | 参数错误，包括 `E0001` 与 clap 校验失败 |
 
 header 文件格式为 JSON 对象，例如：
 
