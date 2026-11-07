@@ -391,3 +391,16 @@ fn downloaded_assets_keep_the_original_url() {
         "https://example.org/b.pdf"
     );
 }
+
+#[test]
+fn integrity_reports_text_and_resource_checks() {
+    let html = "<div class='Article_Content'><p>正文<img src='/a.png'></p></div>";
+    let article = Article::from_html(html, Options::new()).unwrap();
+    let integrity = article.integrity();
+    assert_eq!(integrity.text, Some(true));
+    assert_eq!(integrity.resources, Some(true));
+
+    let restored = Article::from_json(article.to_json()).unwrap();
+    assert_eq!(restored.integrity().text, None);
+    assert_eq!(restored.integrity().resources, None);
+}

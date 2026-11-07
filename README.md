@@ -154,7 +154,7 @@ println!("{}", document.markdown);
 - `Article::from_bytes`：自动识别 BOM 与 `<meta charset>`；
 - `Article::from_json` / `from_json_bytes`：读取 `--formats ir` 导出的正文，对应 `to_json` 与 `to_json_bytes`；
 - `to_json_compact`：省略来源节点，体积约为完整 JSON 的四分之一，仍可被 `from_json` 读取；
-- `metadata()`、`diagnostics()`、`attachments()`、`images()`：结构化读取；
+- `metadata()`、`integrity()`、`diagnostics()`、`attachments()`、`images()`：结构化读取；
 - `OutputOptions`：预设、元数据头，以及全部 `strip-*` 细分开关。
 
 完整接口见 `cargo doc --open`。

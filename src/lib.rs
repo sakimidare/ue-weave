@@ -284,6 +284,16 @@ pub struct Metadata {
     pub url: Option<String>,
 }
 
+/// 正文与资源完整性检查结果。
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Integrity {
+    /// 正文文字和顺序是否与原始 HTML 一致；来源数据未包含时为 `None`。
+    pub text: Option<bool>,
+    /// 图片、链接和 PDF 地址的数量与顺序是否一致；来源数据未包含时为 `None`。
+    pub resources: Option<bool>,
+}
+
 /// 诊断级别。
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -424,6 +434,17 @@ fn text_field(value: &serde_json::Value, key: &str) -> Option<String> {
         .map(str::to_owned)
 }
 
+fn integrity_value(
+    metadata: &serde_json::Map<String, serde_json::Value>,
+    key: &str,
+) -> Option<bool> {
+    metadata
+        .get(key)?
+        .get("value")?
+        .as_str()
+        .map(|value| value == "matched")
+}
+
 fn meta_field(metadata: &serde_json::Map<String, serde_json::Value>, key: &str) -> Option<String> {
     metadata
         .get(key)
@@ -436,6 +457,7 @@ fn meta_field(metadata: &serde_json::Map<String, serde_json::Value>, key: &str) 
 pub struct Article {
     ir: model::Ir,
     metadata: Metadata,
+    integrity: Integrity,
     diagnostics: Vec<Diagnostic>,
     attachments: Vec<Attachment>,
     images: Vec<Image>,
@@ -465,6 +487,10 @@ impl Article {
                 .clone()
                 .or_else(|| meta_field(&ir.metadata, "url")),
         };
+        let integrity = Integrity {
+            text: integrity_value(&ir.metadata, "content_integrity"),
+            resources: integrity_value(&ir.metadata, "resource_integrity"),
+        };
         let diagnostics = ir
             .warnings
             .iter()
@@ -491,6 +517,7 @@ impl Article {
         Self {
             ir,
             metadata,
+            integrity,
             diagnostics,
             attachments,
             images,
@@ -535,6 +562,11 @@ impl Article {
     /// 文章元数据。
     pub fn metadata(&self) -> &Metadata {
         &self.metadata
+    }
+
+    /// 正文与资源完整性检查结果。
+    pub fn integrity(&self) -> Integrity {
+        self.integrity
     }
 
     /// 解析和导出过程中的诊断。

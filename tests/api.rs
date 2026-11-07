@@ -4,8 +4,8 @@
 #![allow(deprecated)]
 
 use ue_weave::{
-    Article, Attachment, Change, Diagnostic, Document, Error, Image, Level, Metadata, Options,
-    OutputOptions, Profile,
+    Article, Attachment, Change, Diagnostic, Document, Error, Image, Integrity, Level, Metadata,
+    Options, OutputOptions, Profile,
 };
 
 #[test]
@@ -55,6 +55,7 @@ fn options_builders_are_pinned() {
 #[test]
 fn accessors_are_pinned() {
     let _: fn(&Article) -> &Metadata = Article::metadata;
+    let _: fn(&Article) -> Integrity = Article::integrity;
     let _: fn(&Article) -> &[Diagnostic] = Article::diagnostics;
     let _: fn(&Article) -> &[Attachment] = Article::attachments;
     let _: fn(&Article) -> &[Image] = Article::images;
@@ -110,6 +111,10 @@ fn data_types_are_pinned() {
         let _: &String = &value.typst;
         let _: &Vec<Change> = &value.changes;
     }
+    fn integrity(value: Integrity) {
+        let _: Option<bool> = value.text;
+        let _: Option<bool> = value.resources;
+    }
     fn diagnostic(value: &Diagnostic) {
         let _: &str = value.code();
         let _: Level = value.level();
@@ -127,7 +132,7 @@ fn data_types_are_pinned() {
         let _: &'static str = value.code();
     }
     let _ = (
-        metadata, attachment, image, document, diagnostic, change, error,
+        metadata, attachment, image, document, integrity, diagnostic, change, error,
     );
 }
 
