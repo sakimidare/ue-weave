@@ -26,11 +26,10 @@ fn css_syntax(value: &str) -> bool {
     if value.trim().is_empty() {
         return false;
     }
-    let mut input = cssparser::ParserInput::new(value);
-    css_tokens(&mut cssparser::Parser::new(&mut input), 0)
+    css_tokens(&mut cssparser::Parser::new(value), 0)
 }
 
-fn css_tokens(parser: &mut cssparser::Parser<'_, '_>, depth: usize) -> bool {
+fn css_tokens(parser: &mut cssparser::Parser<'_>, depth: usize) -> bool {
     use cssparser::Token;
     if depth > 32 {
         return false;
@@ -52,12 +51,12 @@ fn css_tokens(parser: &mut cssparser::Parser<'_, '_>, depth: usize) -> bool {
                 if ["rgb", "rgba", "hsl", "hsla", "calc", "min", "max", "clamp"]
                     .contains(&name.to_ascii_lowercase().as_str()) =>
             {
-                let nested: Result<(), cssparser::ParseError<'_, ()>> =
+                let nested: Result<(), cssparser::ParseError<()>> =
                     parser.parse_nested_block(|nested| {
                         if css_tokens(nested, depth + 1) {
                             Ok(())
                         } else {
-                            Err(nested.new_custom_error(()))
+                            Err(cssparser::ParseError::custom(()))
                         }
                     });
                 if nested.is_err() {
@@ -80,8 +79,7 @@ pub fn corrupted_style(value: &str) -> bool {
 }
 
 pub fn repair_corrupted_font(value: &str) -> String {
-    let mut input = cssparser::ParserInput::new(value);
-    let mut parser = cssparser::Parser::new(&mut input);
+    let mut parser = cssparser::Parser::new(value);
     let mut start = 0;
     let mut result = String::new();
     while !parser.is_exhausted() {

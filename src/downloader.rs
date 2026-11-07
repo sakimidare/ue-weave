@@ -245,7 +245,10 @@ fn fetch_attachment(
                     status: download.status,
                     content_type: download.content_type,
                     size: bytes.len(),
-                    sha256: format!("{:x}", Sha256::digest(bytes)),
+                    sha256: Sha256::digest(bytes)
+                        .iter()
+                        .map(|byte| format!("{byte:02x}"))
+                        .collect(),
                     local_path: name,
                     original_filename: proposed,
                     filename_source: filename_source.into(),
@@ -325,10 +328,7 @@ mod tests {
         assert_eq!(record.detected_type, "zip-container");
         assert_eq!(
             record.sha256,
-            format!(
-                "{:x}",
-                Sha256::digest(fs::read(dir.join(&record.local_path)).unwrap())
-            )
+            "12150286f600a26693e503cb84435806dd117f1efeff1fed214428e7add33c0b"
         );
         fs::remove_dir_all(dir).unwrap();
     }
