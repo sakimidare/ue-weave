@@ -10,12 +10,12 @@ pub enum Format {
     /// Typst 文档，保存为 reconstructed.typ。
     Typst,
     /// 可编辑的 JSON 正文，保存为 reconstructed.json。
-    Json,
+    Ir,
 }
 
 #[derive(Clone, clap::Args)]
 pub struct Options {
-    /// 输出格式，以逗号分隔：html,markdown,typst,json。
+    /// 输出格式，以逗号分隔：html,markdown,typst,ir。
     #[arg(
         long,
         help_heading = "输出",
@@ -42,7 +42,7 @@ impl Options {
         ir: &Ir,
     ) -> crate::error::Result<Vec<(String, Vec<u8>)>> {
         let mut files = Vec::new();
-        if self.formats.contains(&Format::Json) {
+        if self.formats.contains(&Format::Ir) {
             files.push((
                 "reconstructed.json".into(),
                 serde_json::to_vec_pretty(&crate::document::from_analysis(ir)).map_err(

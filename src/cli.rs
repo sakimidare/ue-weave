@@ -87,9 +87,9 @@ pub(crate) struct Args {
     /// 日志颜色：auto 自动、always 始终、never 关闭。
     #[arg(long, value_enum, default_value_t = log::Color::Auto, help_heading = "运行信息")]
     pub(crate) color: log::Color,
-    /// 在终端输出 JSON 运行结果；正文用 --formats json。
+    /// 在终端输出 JSON 运行结果；正文用 --formats ir。
     #[arg(long, help_heading = "运行信息")]
-    pub(crate) json: bool,
+    pub(crate) print_json_result: bool,
     /// 下载图片到 images/，改用本地链接。
     #[arg(long, help_heading = "资源与网络")]
     pub(crate) download_images: bool,
@@ -138,7 +138,7 @@ pub fn main() {
             // ArgMatches incomplete; querying it with `get_flag` or
             // `get_one` may panic inside clap.  These two options only affect
             // error presentation, so inspect their raw argv spelling instead.
-            let json = raw_bool_flag(&argv, "json");
+            let json = raw_bool_flag(&argv, "print-json-result");
             let color = raw_color_option(&argv).unwrap_or_default();
             let filter = raw_log_filter(&argv);
             let message = error.to_string();
@@ -150,7 +150,7 @@ pub fn main() {
     };
     if let Err(error) = pipeline::run(&args) {
         let filter = args.log_filter().unwrap_or_default();
-        report_error(&error, args.json, &filter, args.color);
+        report_error(&error, args.print_json_result, &filter, args.color);
         std::process::exit(1);
     }
 }

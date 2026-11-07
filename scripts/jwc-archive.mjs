@@ -121,7 +121,7 @@ for(let offset=0;offset<articles.length;offset+=3) {
   const records=await Promise.all(articles.slice(offset,offset+3).map(async article=>{
     const directory=`${article.year}/${article.id}`, destination=join(output,directory);
     await mkdir(destination,{recursive:true});
-    const result=await run(binary,[article.url,'--output',destination,'--profile','aggressive','--include-metadata','--download-images','--formats','html,markdown,typst,json','--json','--timeout','25','--retries','1',...networkArgs],180000);
+    const result=await run(binary,[article.url,'--output',destination,'--profile','aggressive','--include-metadata','--download-images','--formats','html,markdown,typst,ir','--print-json-result','--timeout','25','--retries','1',...networkArgs],180000);
     await writeFile(join(destination,'run.log'),`${article.url}\n${result.stderr}\n${result.stdout}`);
     const record={...article,directory,ok:result.code===0,pdf:false};
     let report;

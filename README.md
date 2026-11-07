@@ -131,8 +131,8 @@ typst compile output/reconstructed.typ output/result.pdf
 - `--timeout 45`：将每次请求的超时设为 45 秒，默认 30 秒。
 - `--retries 3`：临时网络故障重试 3 次，默认 2 次。
 - `--allow-private-network`：访问内网网站时使用。
-- `--formats json`：导出 JSON 正文，供程序读取或编辑。
-- `--json`：在终端输出 JSON 格式的运行结果。
+- `--formats ir`：导出 JSON 正文，供程序读取或编辑。
+- `--print-json-result`：在终端输出 JSON 格式的运行结果。
 - `--help`：查看全部参数。
 
 详细说明见[使用手册](docs/usage.md)。实现方式、测试和验收脚本见[开发说明](docs/development.md)。

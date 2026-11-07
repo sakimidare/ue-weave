@@ -32,7 +32,7 @@
 
 UEditor 的保存结果是 HTML。结构还原以这份 HTML 中的内容为依据；原始 Word 精确样式、编辑操作历史和已被过滤的属性记为未知项。网页中明确存在的字体、字号、颜色及间距写入 IR。
 
-`--json` 的终端输出包含格式预设、开关和格式修改记录，以及推断、未知项和下载错误。终端结果中的 `content_integrity` 记录正文文字及顺序的检查结果。
+`--print-json-result` 的终端输出包含格式预设、开关和格式修改记录，以及推断、未知项和下载错误。终端结果中的 `content_integrity` 记录正文文字及顺序的检查结果。
 
 `report.rs` 定义各输入方式及失败路径共用的运行报告。`warnings` 与 `notes` 按枚举级别分开；下载失败、正文或资源完整性不匹配产生 `partial`。报告字段和退出码见[JSON 运行报告](usage.md#json-运行报告)。
 
@@ -96,10 +96,10 @@ DNS 解析器用 `RoutingError` 包装地址解析及网段检查错误。请求
 
 ```sh
 ue-weave 'https://cse.seu.edu.cn/2026/1102/c22535a588376/page.htm' \
-  --output output/cse --retries 3 --timeout 45 --verbose --json
+  --output output/cse --retries 3 --timeout 45 --verbose --print-json-result
 ```
 
-`--retries 0` 关闭重试。日志写入 stderr，包含 URL、错误类型、底层原因、尝试次数和重试间隔。`--json` 的失败结果包含 `code` 与 `network` 对象，其中 `kind` 区分 `timeout`、`dns`、`tls`、`connect`、`http_status`、`read_response` 等，`attempts`、`http_status`、`cause` 提供详情。资源下载失败的信息通过日志和 `--json` 输出。
+`--retries 0` 关闭重试。日志写入 stderr，包含 URL、错误类型、底层原因、尝试次数和重试间隔。`--print-json-result` 的失败结果包含 `code` 与 `network` 对象，其中 `kind` 区分 `timeout`、`dns`、`tls`、`connect`、`http_status`、`read_response` 等，`attempts`、`http_status`、`cause` 提供详情。资源下载失败的信息通过日志和 `--print-json-result` 输出。
 
 ## 开发与测试
 

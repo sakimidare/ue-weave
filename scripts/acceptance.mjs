@@ -82,7 +82,7 @@ for (const [url, title] of articles) {
   const destination = join(output, directory);
   await mkdir(destination, {recursive: true});
   console.log(`文章 ${index}/${articles.size}: ${title || url}`);
-  const command = [url, '--output', destination, '--download-images', '--formats', 'html,markdown,typst,json', '--json', '--profile', profile];
+  const command = [url, '--output', destination, '--download-images', '--formats', 'html,markdown,typst,ir', '--print-json-result', '--profile', profile];
   if (args.includes('--include-metadata')) command.push('--include-metadata');
   if (args.includes('--download-attachments')) command.push('--download-attachments');
   if (args.includes('--allow-private-network')) command.push('--allow-private-network');

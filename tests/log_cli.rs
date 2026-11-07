@@ -8,7 +8,7 @@ fn run(input: &str, extra: &[&str]) -> std::process::Output {
     command
         .args(["--input", input, "--output"])
         .arg(temporary.path())
-        .args(["--formats", "json", "--color", "never"])
+        .args(["--formats", "ir", "--color", "never"])
         .args(extra);
     command.output().unwrap()
 }
@@ -233,7 +233,7 @@ fn invalid_log_switch_reports_dedicated_code() {
     for spec in ["style=loud", "stylesheet=list", "style"] {
         let output = run(
             "fixtures/crawl-regressions.html",
-            &["--log", spec, "--json"],
+            &["--log", spec, "--print-json-result"],
         );
         assert!(!output.status.success(), "{spec}");
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -249,13 +249,13 @@ fn log_switches_do_not_change_json_payload() {
     let base = common::command()
         .args(["--input", "fixtures/crawl-regressions.html", "--output"])
         .arg(temporary.path().join("plain"))
-        .args(["--formats", "json", "--json", "--color", "never"])
+        .args(["--formats", "ir", "--print-json-result", "--color", "never"])
         .output()
         .unwrap();
     let loud = common::command()
         .args(["--input", "fixtures/crawl-regressions.html", "--output"])
         .arg(temporary.path().join("loud"))
-        .args(["--formats", "json", "--json", "--color", "never"])
+        .args(["--formats", "ir", "--print-json-result", "--color", "never"])
         .args(["--log", "all=context"])
         .output()
         .unwrap();

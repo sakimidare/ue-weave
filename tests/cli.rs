@@ -17,7 +17,7 @@ fn local_source_url_resolves_resources_and_invalid_network_options_fail() {
             "--source-url",
             "https://example.org/news/page.html",
             "--formats",
-            "html,json",
+            "html,ir",
             "--output",
         ])
         .arg(dir.path().join("out"))
@@ -60,7 +60,7 @@ fn explain_hint_finishes_warning_and_error_output_once() {
             .arg(&input)
             .arg("--output")
             .arg(temporary.path().join("out"))
-            .args(["--json", "--color", "never"]);
+            .args(["--print-json-result", "--color", "never"]);
         if verbose {
             command.arg("--verbose");
         }
@@ -81,7 +81,7 @@ fn explain_hint_finishes_warning_and_error_output_once() {
         )));
     }
     for (args, code) in [
-        (vec!["--json", "--bad-option"], "E0001"),
+        (vec!["--print-json-result", "--bad-option"], "E0001"),
         (vec!["--explain", "E00011", "--color", "never"], "E0011"),
     ] {
         let output = common::command().args(args).output().unwrap();
@@ -152,10 +152,10 @@ fn explain_colors_only_the_code_and_title() {
 #[test]
 fn error_reporting_uses_clap_argument_boundaries() {
     for args in [
-        vec!["--", "--json"],
-        vec!["--input=--json"],
+        vec!["--", "--print-json-result"],
+        vec!["--input=--print-json-result"],
         vec!["--input=--color=always"],
-        vec!["--color=never", "--", "--json"],
+        vec!["--color=never", "--", "--print-json-result"],
     ] {
         let output = common::command().args(args).output().unwrap();
         assert!(!output.status.success());
@@ -229,7 +229,7 @@ fn node_reference_errors_use_same_code_in_terminal_and_json() {
     let output = common::command()
         .args(["--input-ir"])
         .arg(&input)
-        .args(["--json", "--color", "never", "--output"])
+        .args(["--print-json-result", "--color", "never", "--output"])
         .arg(dir.join("out"))
         .output()
         .unwrap();
@@ -247,7 +247,7 @@ fn color_policy_keeps_json_plain_and_formats_errors() {
     for (color, colored) in [("auto", false), ("never", false), ("always", true)] {
         for invalid in [true, false] {
             let mut cmd = common::command();
-            cmd.args(["--color", color, "--json"]);
+            cmd.args(["--color", color, "--print-json-result"]);
             if invalid {
                 cmd.arg("--bad-option");
             } else {
@@ -270,7 +270,7 @@ fn invalid_profile_reports_clap_error_without_panicking() {
         vec![
             "--profile",
             "typo",
-            "--json",
+            "--print-json-result",
             "--output",
             "/tmp/ue-profile-invalid-json",
         ],
@@ -299,7 +299,7 @@ fn malformed_presentation_options_report_errors_without_panicking() {
             "typo",
             "--color",
             "always",
-            "--json",
+            "--print-json-result",
             "--output",
             "/tmp/ue-profile-invalid-colored",
         ],
@@ -316,7 +316,7 @@ fn malformed_presentation_options_report_errors_without_panicking() {
 #[test]
 fn numbered_diagnostics_match_terminal_and_json() {
     let invalid = common::command()
-        .args(["--json", "--unknown-option"])
+        .args(["--print-json-result", "--unknown-option"])
         .output()
         .unwrap();
     assert!(!invalid.status.success());
@@ -331,8 +331,8 @@ fn numbered_diagnostics_match_terminal_and_json() {
             "--input",
             "fixtures/webplus-college.html",
             "--formats",
-            "json",
-            "--json",
+            "ir",
+            "--print-json-result",
             "--verbose",
             "--output",
         ])
@@ -375,12 +375,17 @@ fn only_requested_final_documents_are_written() {
             ],
         ),
         ("markdown", Some("markdown"), vec!["reconstructed.md"]),
-        ("json", Some("json"), vec!["reconstructed.json"]),
+        ("ir", Some("ir"), vec!["reconstructed.json"]),
     ] {
         let out = dir.join(name);
         let mut command = common::command();
         command
-            .args(["--input", "fixtures/list-values.html", "--json", "--output"])
+            .args([
+                "--input",
+                "fixtures/list-values.html",
+                "--print-json-result",
+                "--output",
+            ])
             .arg(&out);
         if let Some(formats) = formats {
             command.args(["--formats", formats]);
@@ -404,7 +409,7 @@ fn only_requested_final_documents_are_written() {
     }
     let result = common::command()
         .arg("--input-ir")
-        .arg(dir.join("json/reconstructed.json"))
+        .arg(dir.join("ir/reconstructed.json"))
         .args(["--formats", "html", "--output"])
         .arg(dir.join("edited"))
         .output()
@@ -426,7 +431,7 @@ fn custom_asset_root_checks_paths_and_content_fields() {
     fs::create_dir_all(assets.join("attachments")).unwrap();
     fs::write(assets.join("attachments/note.txt"), "附件").unwrap();
     let parsed = common::command()
-        .args(["--formats", "html,markdown,typst,json"])
+        .args(["--formats", "html,markdown,typst,ir"])
         .args(["--input", "fixtures/list-values.html", "--output"])
         .arg(&source)
         .output()
@@ -439,14 +444,14 @@ fn custom_asset_root_checks_paths_and_content_fields() {
     fs::write(&path, serde_json::to_vec(&ir).unwrap()).unwrap();
     let run = |target: &str| {
         common::command()
-            .args(["--formats", "html,markdown,typst,json"])
+            .args(["--formats", "html,markdown,typst,ir"])
             .arg("--input-ir")
             .arg(&path)
             .arg("--asset-root")
             .arg(&assets)
             .arg("--output")
             .arg(dir.join(target))
-            .arg("--json")
+            .arg("--print-json-result")
             .output()
             .unwrap()
     };
@@ -478,7 +483,7 @@ fn metadata_header_is_optional_and_regenerates_from_edited_ir() {
         ("disabled", vec!["--include-metadata=false"]),
     ] {
         let result = common::command()
-            .args(["--formats", "html,markdown,typst,json"])
+            .args(["--formats", "html,markdown,typst,ir"])
             .args([
                 "--input",
                 "fixtures/webplus-college.html",
@@ -525,7 +530,7 @@ fn metadata_header_is_optional_and_regenerates_from_edited_ir() {
     ir["metadata"]["author"] = "张三".into();
     fs::write(&path, serde_json::to_vec(&ir).unwrap()).unwrap();
     let result = common::command()
-        .args(["--formats", "html,markdown,typst,json"])
+        .args(["--formats", "html,markdown,typst,ir"])
         .arg("--input-ir")
         .arg(path)
         .args(["--include-metadata", "--output"])
@@ -562,14 +567,14 @@ fn site_config_overrides_defaults_and_validates_input() {
         let index = invocation.get();
         invocation.set(index + 1);
         common::command()
-            .args(["--formats", "html,markdown,typst,json"])
+            .args(["--formats", "html,markdown,typst,ir"])
             .arg("--input")
             .arg(&html)
             .arg("--site-config")
             .arg(&config)
             .arg("--output")
             .arg(dir.join(format!("out-{index}")))
-            .arg("--json")
+            .arg("--print-json-result")
             .args(extra)
             .output()
             .unwrap()
@@ -636,10 +641,10 @@ fn webplus_auto_selection_and_metadata() {
     let temporary = common::directory();
     let dir = temporary.path();
     let output = common::command()
-        .args(["--formats", "html,markdown,typst,json"])
+        .args(["--formats", "html,markdown,typst,ir"])
         .args(["--input", "fixtures/webplus-college.html", "--output"])
         .arg(dir)
-        .arg("--json")
+        .arg("--print-json-result")
         .output()
         .unwrap();
     assert!(
@@ -657,7 +662,7 @@ fn webplus_auto_selection_and_metadata() {
     assert!(ir["metadata"].get("author").is_none());
     assert_eq!(ir["metadata"]["date"], "2026-11-02");
     let explicit = common::command()
-        .args(["--formats", "html,markdown,typst,json"])
+        .args(["--formats", "html,markdown,typst,ir"])
         .args([
             "--input",
             "fixtures/webplus-college.html",
@@ -677,7 +682,7 @@ fn output_profiles_and_overrides_preserve_canonical_ir() {
     let base = temporary.path();
     for profile in ["conservative", "balanced", "aggressive"] {
         let output = common::command()
-            .args(["--formats", "html,markdown,typst,json"])
+            .args(["--formats", "html,markdown,typst,ir"])
             .args([
                 "--input",
                 "fixtures/output-profiles.html",
@@ -686,7 +691,7 @@ fn output_profiles_and_overrides_preserve_canonical_ir() {
                 "--output",
             ])
             .arg(base.join(profile))
-            .arg("--json")
+            .arg("--print-json-result")
             .output()
             .unwrap();
         assert!(
@@ -725,7 +730,7 @@ fn output_profiles_and_overrides_preserve_canonical_ir() {
     assert!(md.contains("A&#124;B"));
     assert!(md.contains("colspan=\"2\""));
     let result = common::command()
-        .args(["--formats", "html,markdown,typst,json"])
+        .args(["--formats", "html,markdown,typst,ir"])
         .arg("--input-ir")
         .arg(base.join("conservative/reconstructed.json"))
         .args([
@@ -737,7 +742,7 @@ fn output_profiles_and_overrides_preserve_canonical_ir() {
             "--output",
         ])
         .arg(base.join("override"))
-        .arg("--json")
+        .arg("--print-json-result")
         .output()
         .unwrap();
     assert!(
@@ -757,10 +762,10 @@ fn distinguishes_selector_errors_without_writing_documents() {
     let directory = temporary.path().join("output");
     for (selector, code) in [("[", "E0006"), (".missing-article", "E0007")] {
         let output = common::command()
-            .args(["--formats", "html,markdown,typst,json"])
+            .args(["--formats", "html,markdown,typst,ir"])
             .args(["--input", "fixtures/table-spans.html", "--output"])
             .arg(&directory)
-            .args(["--selector", selector, "--json"])
+            .args(["--selector", selector, "--print-json-result"])
             .output()
             .unwrap();
         assert!(!output.status.success());
@@ -774,8 +779,8 @@ fn distinguishes_selector_errors_without_writing_documents() {
 #[test]
 fn missing_input_emits_json_error_and_failure_exit() {
     let output = common::command()
-        .args(["--formats", "html,markdown,typst,json"])
-        .args(["--output", "/tmp/ue-unused-output", "--json"])
+        .args(["--formats", "html,markdown,typst,ir"])
+        .args(["--output", "/tmp/ue-unused-output", "--print-json-result"])
         .output()
         .unwrap();
     assert!(!output.status.success());

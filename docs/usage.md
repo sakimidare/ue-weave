@@ -43,11 +43,11 @@ ue-weave URL --resolve jwc.seu.edu.cn=10.64.84.122 --allow-private-network --out
 | `--native-markdown` | 简单列表和规则表格使用原生 Markdown，支持无表头表格 | 关 | 开 | 开 |
 | `--strip-image-dimensions` | 移除图片显式宽高 | 关 | 关 | 关 |
 
-无表头的规则表格会添加空表头，原有各行保持为数据行；使用 `--json` 可查看这项转换记录。单元格内换行使用 `<br>`，段落间使用 `<br><br>`。合并单元格、嵌套表格和混合表头使用按行排版的 HTML。表格语法遵循 [GFM 表格规范](https://github.github.com/gfm/#tables-extension-)。
+无表头的规则表格会添加空表头，原有各行保持为数据行；使用 `--print-json-result` 可查看这项转换记录。单元格内换行使用 `<br>`，段落间使用 `<br><br>`。合并单元格、嵌套表格和混合表头使用按行排版的 HTML。表格语法遵循 [GFM 表格规范](https://github.github.com/gfm/#tables-extension-)。
 
 字体、颜色和布局支持细分控制：
 
-段首空白清理支持跨多个文本片段处理，保留段内空格和换行。含代码或显式预格式化样式的段落保留空白。使用 `--json` 可在终端查看清理前后的值及对应的 HTML 标签编号。使用 `--trim-leading-spaces=false` 可以关闭此项。
+段首空白清理支持跨多个文本片段处理，保留段内空格和换行。含代码或显式预格式化样式的段落保留空白。使用 `--print-json-result` 可在终端查看清理前后的值及对应的 HTML 标签编号。使用 `--trim-leading-spaces=false` 可以关闭此项。
 
 | 组合开关 | 细分开关 |
 | --- | --- |
@@ -75,7 +75,7 @@ ue-weave --input page.html --output output/ \
   --no-repair-corrupt-fonts
 ```
 
-字体名中由编辑器产生的 `undefined` 包装默认会被清理，并对包含空格的字体名补充一对引号。例如 `undefinedundefinedmicrosoft yaheiundefinedundefined` 会还原为 `"microsoft yahei"`。添加 `--json` 可在标准输出的 `output_changes` 中查看修复记录；使用 `--no-repair-corrupt-fonts` 可保留原值。移除字体的开关仍会按所选预设生效。
+字体名中由编辑器产生的 `undefined` 包装默认会被清理，并对包含空格的字体名补充一对引号。例如 `undefinedundefinedmicrosoft yaheiundefinedundefined` 会还原为 `"microsoft yahei"`。添加 `--print-json-result` 可在标准输出的 `output_changes` 中查看修复记录；使用 `--no-repair-corrupt-fonts` 可保留原值。移除字体的开关仍会按所选预设生效。
 
 三档均保留正文、粗体、斜体、下划线、删除线、正文内换行、链接、图片、列表层级和表格合并结构。Markdown 通过内嵌 HTML 表达复杂表格、特殊编号和样式；Typst 将结构映射为排版元素，字体由本地字体库解析，缺失时使用回退字体。
 
@@ -85,7 +85,7 @@ ue-weave --input page.html --output output/ \
 | --- | --- |
 | `--input <FILE>` | 读取本地 HTML |
 | `--input-ir <FILE>` | 从已有 JSON 正文重新导出 |
-| `--formats <FORMATS>` | 选择 html、markdown、typst、json，多项用逗号分隔；默认前三项 |
+| `--formats <FORMATS>` | 选择 html、markdown、typst、ir，多项用逗号分隔；默认前三项 |
 | `--output <DIR>`、`-o <DIR>` | 指定输出目录 |
 | `--selector <[FIELD=]CSS>` | 覆盖选择器，可重复；省略字段时指定正文 |
 | `--site-config <FILE>` | 加载站点选择器 JSON 配置 |
@@ -99,7 +99,7 @@ ue-weave --input page.html --output output/ \
 | `--headers-file <FILE>` | 从 JSON 对象读取 HTTP header |
 | `--include-metadata` | 在导出文档顶部显示文章元数据 |
 | `--no-inference` | 关闭启发式推断 |
-| `--json` | 以 JSON 输出运行结果摘要 |
+| `--print-json-result` | 以 JSON 输出运行结果摘要 |
 | `--verbose` | 输出详细阶段日志；等价于 `--log all=context` |
 | `--quiet` | 只输出错误；等价于 `--log all=off` |
 | `--log <[TOPIC=]LEVEL>` | 日志开关，可重复或用逗号分隔 |
@@ -210,14 +210,14 @@ ue-weave URL -o out --quiet --log note=list
 
 `--log all=summary`（简写为 `--log summary`）也会隐藏进度行。需要同时显示进度时，使用 `--log all=summary,progress=list`；类别设置 `progress=list` 优先于全局设置。`--log progress=off` 可与上下文日志一起使用，HTML 与输出文字的排版宽度保持一致。
 
-日志开关只影响终端日志，不改变 `--json` 结果和退出码。
+日志开关只影响终端日志，不改变 `--print-json-result` 结果和退出码。
 
 ## JSON 运行报告
 
-`--json` 将运行报告写入标准输出，日志写入标准错误。可分别保存：
+`--print-json-result` 将运行报告写入标准输出，日志写入标准错误。可分别保存：
 
 ```sh
-ue-weave URL -o output --json --log style=list > result.json 2> run.log
+ue-weave URL -o output --print-json-result --log style=list > result.json 2> run.log
 ```
 
 网页、本地 HTML、正文 JSON 再导出及失败结果使用相同字段。没有适用值时填 `null`，没有记录的数组为空。
@@ -280,7 +280,7 @@ ue-weave --input page.html --output output/ \
 
 ## 编辑与重新导出
 
-通过 `--formats json` 导出结构化正文后，可以修改 `reconstructed.json` 的 `blocks`、`runs` 等字段，再生成文档：
+通过 `--formats ir` 导出结构化正文后，可以修改 `reconstructed.json` 的 `blocks`、`runs` 等字段，再生成文档：
 
 ```sh
 ue-weave --input-ir output/reconstructed.json \
@@ -299,6 +299,6 @@ JSON 中的 `source_nodes` 对应 `original_nodes` 保存的网页节点，可�
 
 普通正文编辑 `runs`，代码块编辑 `text`。标题级别写为 `"level": 2`，行距等格式字段填写具体值。
 
-处理日志通过 `--verbose` 或 `--json` 查看。
+处理日志通过 `--verbose` 或 `--print-json-result` 查看。
 
 终端错误使用 `error[E0001]` 格式，警告使用 `warning[W0001]` 格式。编号含义见[日志编号](diagnostics.md)。

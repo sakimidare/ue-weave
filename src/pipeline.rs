@@ -225,7 +225,7 @@ fn report(parsed: &Parsed, rendered: &profile::Output, args: &Args, logger: &Log
         ir.attachments.len(),
         ir.images.len(),
     );
-    if args.json {
+    if args.print_json_result {
         let mut result = crate::report::Report::completed(ir, rendered, args);
         result.source = serde_json::json!(parsed.source);
         result.selector = serde_json::json!(parsed.selector);
@@ -271,7 +271,7 @@ pub(crate) fn run(args: &Args) -> Result<()> {
     let mut parsed = parse(source.load(network.as_ref(), &logger)?, args, &logger)?;
     process_assets(&mut parsed.ir, args, output, network.as_ref(), &logger)?;
     let settings = args.output_options.resolve(args.profile);
-    let rendered = if args.json {
+    let rendered = if args.print_json_result {
         profile::prepare(&parsed.ir, settings)
     } else {
         profile::prepare_documents(&parsed.ir, settings)

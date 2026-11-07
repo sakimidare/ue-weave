@@ -24,7 +24,7 @@ fn quiet_suppresses_retry_notes_and_network_topic_restores_them() {
                 "--timeout",
                 "2",
                 "--formats",
-                "json",
+                "ir",
                 "--color",
                 "never",
             ])
@@ -82,7 +82,7 @@ fn fixed_address_preserves_host_and_downloads_mislabeled_images() {
             "campus.example=127.0.0.1",
             "--allow-private-network",
             "--download-images",
-            "--json",
+            "--print-json-result",
             "--output",
         ])
         .arg(dir.path())
@@ -194,7 +194,7 @@ fn malformed_header_values_are_absent_from_diagnostics() {
                 "https://example.org/",
                 "--header",
                 header,
-                "--json",
+                "--print-json-result",
                 "--output",
             ])
             .arg(directory.path())
@@ -218,7 +218,7 @@ fn private_network_requires_explicit_option() {
         .arg(format!("http://{}", listener.local_addr().unwrap()))
         .arg("--output")
         .arg(&dir)
-        .arg("--json")
+        .arg("--print-json-result")
         .output()
         .unwrap();
     assert!(!result.status.success());
@@ -294,7 +294,7 @@ fn page_and_attachment_retry_and_local_config_use_same_pipeline() {
     fs::write(&config, r#"{"content":".body","title":"h1"}"#).unwrap();
     let result = Command::new(env!("CARGO_BIN_EXE_ue-weave"))
         .arg(&url)
-        .args(["--formats", "html,markdown,typst,json"])
+        .args(["--formats", "html,markdown,typst,ir"])
         .arg("--allow-private-network")
         .args([
             "--download-attachments",
@@ -302,7 +302,7 @@ fn page_and_attachment_retry_and_local_config_use_same_pipeline() {
             "1",
             "--timeout",
             "2",
-            "--json",
+            "--print-json-result",
             "--verbose",
             "--site-config",
         ])
@@ -365,7 +365,7 @@ fn failed_asset_downloads_report_partial_and_keep_documents() {
             "--download-attachments",
             "--retries",
             "0",
-            "--json",
+            "--print-json-result",
             "--log",
             "off",
             "--output",
@@ -399,7 +399,7 @@ fn exhausted_retries_produce_structured_error() {
             "1",
             "--timeout",
             "2",
-            "--json",
+            "--print-json-result",
             "--output",
         ])
         .arg(&dir)

@@ -7,7 +7,14 @@ fn report_schema_is_shared_by_html_ir_and_failure() {
     let run = |args: &[&str], output: &std::path::Path| {
         let result = common::command()
             .args(args)
-            .args(["--json", "--log", "off", "--formats", "json", "--output"])
+            .args([
+                "--print-json-result",
+                "--log",
+                "off",
+                "--formats",
+                "ir",
+                "--output",
+            ])
             .arg(output)
             .output()
             .unwrap();
@@ -56,7 +63,7 @@ fn nonexistent_log_codes_are_errors() {
             .args([
                 "--input",
                 "fixtures/crawl-regressions.html",
-                "--json",
+                "--print-json-result",
                 "--log",
             ])
             .arg(format!("{code}=off"))
@@ -79,7 +86,14 @@ fn visible_style_losses_warn_in_all_profiles() {
         let result = common::command()
             .arg("--input")
             .arg(&input)
-            .args(["--profile", profile, "--json", "--log", "off", "--output"])
+            .args([
+                "--profile",
+                profile,
+                "--print-json-result",
+                "--log",
+                "off",
+                "--output",
+            ])
             .arg(dir.path().join(profile))
             .output()
             .unwrap();

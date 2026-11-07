@@ -39,7 +39,7 @@ for (const article of original.articles) {
     results.push({ ...article, carried_forward: true });
   } else {
     mkdirSync(destination, { recursive: true });
-    const result = run(binary, ['--input-ir', join(source, article.directory, 'reconstructed.json'), '--output', destination, '--formats', 'html,markdown,typst,json', '--profile', 'aggressive', '--include-metadata']);
+    const result = run(binary, ['--input-ir', join(source, article.directory, 'reconstructed.json'), '--output', destination, '--formats', 'html,markdown,typst,ir', '--profile', 'aggressive', '--include-metadata']);
     writeFileSync(join(destination, 'run.log'), result.log);
     const pdf = result.ok ? run('typst', ['compile', join(destination, 'reconstructed.typ'), join(destination, 'result.pdf')]) : { ok: false, log: '' };
     writeFileSync(join(destination, 'typst.log'), pdf.log);

@@ -23,7 +23,7 @@ fn write(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 pub fn run(path: &Path, args: &crate::cli::Args, output: &Path) -> Result<()> {
-    let json = args.json;
+    let json = args.print_json_result;
     let profile = args.profile;
     let settings = args.output_options.resolve(profile);
     let asset_root = args.asset_root.as_deref();
