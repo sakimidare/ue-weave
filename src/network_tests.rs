@@ -34,9 +34,23 @@ fn server(responses: Vec<(&'static str, Duration)>) -> (String, thread::JoinHand
             stream
                 .set_read_timeout(Some(Duration::from_secs(1)))
                 .unwrap();
-            let _ = stream.read(&mut [0; 4096]);
+            let mut request = Vec::new();
+            while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                let mut buffer = [0; 1024];
+                let length = stream.read(&mut buffer).expect("read request headers");
+                assert!(length > 0, "request ended before headers");
+                request.extend_from_slice(&buffer[..length]);
+                assert!(request.len() <= 8192, "request headers exceed test limit");
+            }
             count += 1;
             thread::sleep(delay);
+            // This fixture serves one request per connection; declare that to
+            // prevent clients reusing a socket while the server is closing it.
+            let response = if response.to_ascii_lowercase().contains("connection:") {
+                response.to_owned()
+            } else {
+                response.replacen("\r\n\r\n", "\r\nConnection: close\r\n\r\n", 1)
+            };
             let _ = stream.write_all(response.as_bytes());
         }
         count
@@ -169,7 +183,19 @@ fn timeout_and_tls_report_underlying_causes() {
     assert!(error.detail.contains("timed out"));
     server.join().unwrap();
 
-    let (url, server) = self::server(vec![(OK, Duration::ZERO)]);
+    // Intentionally answer a TLS handshake with plaintext HTTP.
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let url = format!("https://{}", listener.local_addr().unwrap());
+    let server = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let length = stream.read(&mut [0; 4096]).unwrap();
+        assert!(length > 0);
+        stream.write_all(OK.as_bytes()).unwrap();
+        1
+    });
     let error = network::fetch(
         &crate::network_policy::client(
             Duration::from_secs(5),
@@ -177,7 +203,7 @@ fn timeout_and_tls_report_underlying_causes() {
             reqwest::header::HeaderMap::new(),
         )
         .unwrap(),
-        &url.replace("http:", "https:"),
+        &url,
         policy(2),
         None,
         &Logger::new(false),
